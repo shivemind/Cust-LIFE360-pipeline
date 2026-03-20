@@ -1,0 +1,50 @@
+openapi: "3.0.0"
+info:
+  title: Life360 Circles API
+  version: 1.0.0
+  description: Manage Life360 circles and memberships
+servers:
+  - url: https://api.life360.com/v3
+    description: Production server
+paths:
+  /circles:
+    get:
+      summary: List circles
+      operationId: listCircles
+      responses:
+        "200":
+          description: A list of circles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Circle'
+  /circles/{circleId}:
+    get:
+      summary: Get a circle
+      operationId: getCircle
+      parameters:
+        - name: circleId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Circle details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Circle'
+components:
+  schemas:
+    Circle:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        memberCount:
+          type: integer
