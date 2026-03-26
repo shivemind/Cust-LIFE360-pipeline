@@ -1,29 +1,65 @@
-# jeffLife360 — Postman Spec Hub Uploader
+# Cust-LIFE360-spechub-uploader
 
 Automation tool that discovers OpenAPI specification files and uploads them to a **Postman workspace** via the Spec Hub API, with automatic collection generation and environment setup.
 
-## What It Does
+## How It Works
 
-1. **Scans** a local directory tree (`swaggerhub_apis/` by default) for `*.yaml` OpenAPI specs
-2. **Creates Spec Hub entries** in the target Postman workspace for any specs not already present
-3. **Generates Postman Collections** from each newly uploaded spec (async task with polling)
-4. **Creates Environments** with variables derived from the spec's `servers` block (e.g. `baseUrl`)
-5. **Skips** specs that already exist in the workspace, making reruns safe (idempotent upsert)
+```mermaid
+flowchart TD
+    subgraph input [Input]
+        A1["swaggerhub_apis/ directory"]
+        A2["*.yaml OpenAPI specs"]
+    end
 
-## Included Specs
+    subgraph config [Configuration]
+        B1["~/.config/postman/config.json"]
+        B2[POSTMAN_API_KEY]
+        B3[POSTMAN_WORKSPACE_ID]
+    end
 
-| Path | Description |
-|------|-------------|
-| `swaggerhub_apis/life360/circles-api-1.0.0.yaml` | OpenAPI 3.0 spec for the Life360 Circles API (`GET /circles`, `GET /circles/{circleId}`) against `https://api.life360.com/v3` |
+    subgraph upload [Upload Pipeline]
+        C1[Scan directory for YAML files]
+        C2[Check existing specs in workspace]
+        C3{Spec exists?}
+        C4[Create Spec Hub entry]
+        C5[Skip - already exists]
+        C6["Generate Collection (async + poll)"]
+        C7[Create Environment from servers block]
+    end
 
-Additional specs can be added under `swaggerhub_apis/<project>/` following the same naming convention.
+    subgraph output [Postman Workspace]
+        D1[Spec Hub Entries]
+        D2[Generated Collections]
+        D3["Environments (baseUrl, etc.)"]
+    end
 
-## Prerequisites
+    input --> C1
+    config --> C1
+    C1 --> C2 --> C3
+    C3 -->|No| C4 --> C6 --> C7
+    C3 -->|Yes| C5
+    C4 --> D1
+    C6 --> D2
+    C7 --> D3
+```
+
+## Setup
+
+```mermaid
+flowchart LR
+    A[Create config.json] --> B[Add OpenAPI specs to swaggerhub_apis/]
+    B --> C[Run upload script]
+    C --> D[Specs in Postman Spec Hub]
+    D --> E[Collections auto-generated]
+    D --> F[Environments auto-created]
+```
+
+### Prerequisites
 
 - Python 3.8+
 - A valid Postman API key with workspace write permissions
 
-## Configuration
+### Configuration
 
 Create a config file (default: `~/.config/postman/config.json`):
 
@@ -49,16 +85,28 @@ python tools/upload_postman_apis.py
 | `--config` | `~/.config/postman/config.json` | Path to credentials config file |
 | `--input` | `swaggerhub_apis` | Directory to scan for OpenAPI YAML files |
 
+### Adding New Specs
+
+1. Create a folder under `swaggerhub_apis/` with the project name
+2. Place your OpenAPI YAML file inside (e.g., `swaggerhub_apis/my-api/my-api-1.0.0.yaml`)
+3. Run the upload script — it will only process new specs (idempotent)
+
+## Included Specs
+
+| Path | Description |
+|------|-------------|
+| `swaggerhub_apis/life360/circles-api-1.0.0.yaml` | OpenAPI 3.0 spec for the Life360 Circles API (`GET /circles`, `GET /circles/{circleId}`) against `https://api.life360.com/v3` |
+
 ## Project Structure
 
 ```
-jeffLife360/
+Cust-LIFE360-spechub-uploader/
 ├── tools/
-│   └── upload_postman_apis.py    # Main uploader script
+│   └── upload_postman_apis.py        # Main uploader script
 ├── swaggerhub_apis/
 │   └── life360/
-│       └── circles-api-1.0.0.yaml
+│       └── circles-api-1.0.0.yaml    # Sample OpenAPI spec
 ├── test_config/
-│   └── config.json               # Local test credentials (git-ignored)
+│   └── config.json                   # Local test credentials (git-ignored)
 └── .gitignore
 ```
