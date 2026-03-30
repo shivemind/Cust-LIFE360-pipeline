@@ -1,0 +1,26 @@
+type: http
+name: Get a circle
+url: '{{baseUrl}}/circles/:circleId'
+method: GET
+headers:
+  - key: Accept
+    value: application/json
+pathVariables:
+  - key: circleId
+    value: string
+examples:
+  - response:
+      statusCode: 200
+      statusText: OK
+      body:
+        type: json
+        content: |-
+          {
+            "id": "string",
+            "name": "string",
+            "memberCount": 6414
+          }
+      headers:
+        - key: Content-Type
+          value: application/json
+    name: Circle details
