@@ -16,12 +16,12 @@ examples:
             {
               "id": "string",
               "name": "string",
-              "memberCount": 2363
+              "memberCount": 8650
             },
             {
               "id": "string",
               "name": "string",
-              "memberCount": 1802
+              "memberCount": 312
             }
           ]
       headers:
@@ -35,7 +35,7 @@ examples:
         type: json
         content: |-
           {
-            "code": 3499,
+            "code": 9001,
             "message": "string"
           }
       headers:
@@ -49,7 +49,7 @@ examples:
         type: json
         content: |-
           {
-            "code": 3499,
+            "code": 9001,
             "message": "string"
           }
       headers:
