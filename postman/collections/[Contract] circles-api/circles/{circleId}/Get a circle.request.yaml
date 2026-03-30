@@ -7,7 +7,8 @@ headers:
     value: application/json
 pathVariables:
   - key: circleId
-    value: string
+    value: abc123
+    description: Unique identifier for a circle
 scripts:
   - type: afterResponse
     code:
@@ -79,9 +80,51 @@ examples:
           {
             "id": "string",
             "name": "string",
-            "memberCount": 3470
+            "memberCount": 569
           }
       headers:
         - key: Content-Type
           value: application/json
     name: Circle details
+  - response:
+      statusCode: 401
+      statusText: Unauthorized
+      body:
+        type: json
+        content: |-
+          {
+            "code": 1623,
+            "message": "string"
+          }
+      headers:
+        - key: Content-Type
+          value: application/json
+    name: Unauthorized
+  - response:
+      statusCode: 404
+      statusText: Not Found
+      body:
+        type: json
+        content: |-
+          {
+            "code": 1623,
+            "message": "string"
+          }
+      headers:
+        - key: Content-Type
+          value: application/json
+    name: Circle not found
+  - response:
+      statusCode: 500
+      statusText: Internal Server Error
+      body:
+        type: json
+        content: |-
+          {
+            "code": 1623,
+            "message": "string"
+          }
+      headers:
+        - key: Content-Type
+          value: application/json
+    name: Internal server error

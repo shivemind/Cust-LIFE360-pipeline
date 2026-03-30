@@ -34,15 +34,43 @@ examples:
             {
               "id": "string",
               "name": "string",
-              "memberCount": 4332
+              "memberCount": 7722
             },
             {
               "id": "string",
               "name": "string",
-              "memberCount": 5185
+              "memberCount": 809
             }
           ]
       headers:
         - key: Content-Type
           value: application/json
     name: A list of circles
+  - response:
+      statusCode: 401
+      statusText: Unauthorized
+      body:
+        type: json
+        content: |-
+          {
+            "code": 1383,
+            "message": "string"
+          }
+      headers:
+        - key: Content-Type
+          value: application/json
+    name: Unauthorized
+  - response:
+      statusCode: 500
+      statusText: Internal Server Error
+      body:
+        type: json
+        content: |-
+          {
+            "code": 1383,
+            "message": "string"
+          }
+      headers:
+        - key: Content-Type
+          value: application/json
+    name: Internal server error
