@@ -11,25 +11,35 @@ paths:
     get:
       summary: List circles
       operationId: listCircles
+      tags:
+        - Circles
       responses:
         "200":
           description: A list of circles
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Circle'
+                $ref: '#/components/schemas/CircleList'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /circles/{circleId}:
     get:
       summary: Get a circle
       operationId: getCircle
+      tags:
+        - Circles
       parameters:
-        - name: circleId
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/CircleId'
       responses:
         "200":
           description: Circle details
@@ -37,8 +47,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Circle'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "404":
+          description: Circle not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 components:
+  parameters:
+    CircleId:
+      name: circleId
+      in: path
+      required: true
+      description: Unique identifier for a circle
+      schema:
+        $ref: '#/components/schemas/CircleIdParam'
   schemas:
+    CircleIdParam:
+      type: string
+      description: Unique circle identifier
+      example: "abc123"
     Circle:
       type: object
       properties:
@@ -48,3 +88,17 @@ components:
           type: string
         memberCount:
           type: integer
+    CircleList:
+      type: array
+      items:
+        $ref: '#/components/schemas/Circle'
+    Error:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+      required:
+        - code
+        - message
