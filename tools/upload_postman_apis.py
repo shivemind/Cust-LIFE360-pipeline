@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 """
-Postman Spec Hub Uploader
+LEGACY — Postman Spec Hub Uploader (manual fallback)
+
+This script has been superseded by the GitHub Actions pipeline in
+.github/workflows/onboard-apis.yml which uses the postman-cs action suite
+(postman-api-onboarding-action) to automate onboarding with governance,
+testing, and CI baked in.
+
+Use this script only for ad-hoc manual uploads outside of CI.
 
 Reads SwaggerHub API specs from a local directory and uploads them to a Postman
 workspace via Spec Hub.  For each spec file a Spec Hub specification is created,

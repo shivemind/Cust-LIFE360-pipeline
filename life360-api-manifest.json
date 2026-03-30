@@ -1,0 +1,19 @@
+{
+  "organization": "Life360",
+  "domain": "life360-platform",
+  "domain_code": "L360",
+  "governance_mapping": {
+    "life360-platform": "Life360 API Platform"
+  },
+  "apis": [
+    {
+      "name": "circles-api",
+      "spec_path": "swaggerhub_apis/life360/circles-api-1.0.0.yaml",
+      "spec_url": "",
+      "environments": ["prod"],
+      "runtime_urls": {
+        "prod": "https://api.life360.com/v3"
+      }
+    }
+  ]
+}

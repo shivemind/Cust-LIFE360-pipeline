@@ -1,112 +1,246 @@
-# Cust-LIFE360-spechub-uploader
+# Life360 SwaggerHub → Postman v12 Migration
 
-Automation tool that discovers OpenAPI specification files and uploads them to a **Postman workspace** via the Spec Hub API, with automatic collection generation and environment setup.
+CI-driven pipeline that migrates Life360 APIs from SwaggerHub into the **Postman v12 API Catalog** with governance, contract testing, and environment management baked in from day one.
 
-## How It Works
+Built on the [`postman-cs` open-alpha GitHub Action suite`](https://github.com/postman-cs/postman-api-onboarding-action):
+
+| Action | Role |
+|--------|------|
+| [`postman-api-onboarding-action`](https://github.com/postman-cs/postman-api-onboarding-action) | Composite orchestrator — chains bootstrap → repo-sync |
+| [`postman-bootstrap-action`](https://github.com/postman-cs/postman-bootstrap-action) | Workspace, Spec Hub upload, collection generation, governance |
+| [`postman-repo-sync-action`](https://github.com/postman-cs/postman-repo-sync-action) | Environments, monitors, CI workflow generation, git linking |
+| [`postman-insights-onboarding-action`](https://github.com/postman-cs/postman-insights-onboarding-action) | Insights discovered-service linking (optional, for K8s) |
+
+## Architecture
 
 ```mermaid
 flowchart TD
-    subgraph input [Input]
-        A1["swaggerhub_apis/ directory"]
-        A2["*.yaml OpenAPI specs"]
+    subgraph sources [Source of Truth]
+        SH[SwaggerHub APIs]
+        LOCAL["swaggerhub_apis/*.yaml"]
     end
 
-    subgraph config [Configuration]
-        B1["~/.config/postman/config.json"]
-        B2[POSTMAN_API_KEY]
-        B3[POSTMAN_WORKSPACE_ID]
+    subgraph repo [GitHub Repository]
+        MANIFEST[life360-api-manifest.json]
+        ONBOARD["onboard-apis.yml workflow"]
+        GOV["api-governance.yml workflow"]
+        GENCI["Auto-generated CI per API"]
     end
 
-    subgraph upload [Upload Pipeline]
-        C1[Scan directory for YAML files]
-        C2[Check existing specs in workspace]
-        C3{Spec exists?}
-        C4[Create Spec Hub entry]
-        C5[Skip - already exists]
-        C6["Generate Collection (async + poll)"]
-        C7[Create Environment from servers block]
+    subgraph postmanV12 [Postman v12]
+        CATALOG[API Catalog]
+        SPECHUB[Spec Hub]
+        COLS["Collections: Baseline + Smoke + Contract"]
+        ENVS[Environments]
+        GOVGRP[Governance Groups]
+        MON[Monitors]
     end
 
-    subgraph output [Postman Workspace]
-        D1[Spec Hub Entries]
-        D2[Generated Collections]
-        D3["Environments (baseUrl, etc.)"]
-    end
+    SH -->|Export YAML| LOCAL
+    LOCAL --> MANIFEST
+    MANIFEST --> ONBOARD
 
-    input --> C1
-    config --> C1
-    C1 --> C2 --> C3
-    C3 -->|No| C4 --> C6 --> C7
-    C3 -->|Yes| C5
-    C4 --> D1
-    C6 --> D2
-    C7 --> D3
+    ONBOARD -->|"bootstrap-action"| CATALOG
+    ONBOARD -->|"bootstrap-action"| SPECHUB
+    ONBOARD -->|"bootstrap-action"| COLS
+    ONBOARD -->|"bootstrap-action"| GOVGRP
+    ONBOARD -->|"repo-sync-action"| ENVS
+    ONBOARD -->|"repo-sync-action"| MON
+    ONBOARD -->|"repo-sync-action"| GENCI
+
+    GOV -->|PR gate| LOCAL
+    GENCI -->|Smoke + Contract tests| COLS
 ```
 
-## Setup
+## Pipeline at a Glance
 
 ```mermaid
 flowchart LR
-    A[Create config.json] --> B[Add OpenAPI specs to swaggerhub_apis/]
-    B --> C[Run upload script]
-    C --> D[Specs in Postman Spec Hub]
-    D --> E[Collections auto-generated]
-    D --> F[Environments auto-created]
+    PR["Pull Request"] -->|Spectral lint + validate| GATE{Governance gate}
+    GATE -->|Pass| MERGE[Merge to main]
+    MERGE --> BOOT["Bootstrap: workspace, spec, collections, governance"]
+    BOOT --> SYNC["Repo Sync: environments, monitors, CI, git link"]
+    SYNC --> CI["Generated CI: smoke + contract tests"]
 ```
 
-### Prerequisites
+**On pull request** — the `api-governance` workflow lints every changed spec with Spectral and validates the manifest structure. Specs that violate OpenAPI standards or miss required fields block the merge.
 
-- Python 3.8+
-- A valid Postman API key with workspace write permissions
+**On merge to main** — the `onboard-apis` workflow reads `life360-api-manifest.json`, builds a matrix of APIs, and runs `postman-api-onboarding-action` for each one. Each API gets:
 
-### Configuration
+- A dedicated Postman **workspace** registered in the **API Catalog**
+- The OpenAPI spec uploaded to **Spec Hub**
+- **Baseline**, **Smoke**, and **Contract** collections generated from the spec
+- **Environments** with runtime URLs (prod, staging, etc.)
+- **Governance group** assignment
+- A per-API **CI workflow** committed to the repo for ongoing smoke and contract testing
+- **Workspace ↔ repo git link** via Bifrost
 
-Create a config file (default: `~/.config/postman/config.json`):
+## Quick Start
+
+### 1. Configure secrets
+
+The workflows require these GitHub repository secrets:
+
+| Secret | How to get it |
+|--------|---------------|
+| `POSTMAN_API_KEY` | Postman → Settings → API Keys → Generate (starts with `PMAK-`) |
+| `POSTMAN_ACCESS_TOKEN` | `postman login` → `cat ~/.postman/postmanrc \| jq -r '.login._profiles[].accessToken'` |
+| `GH_FALLBACK_TOKEN` | GitHub PAT with `actions:write` + `contents:write` (for generated workflow commits) |
+
+```bash
+gh secret set POSTMAN_API_KEY       --repo <owner>/<repo>
+gh secret set POSTMAN_ACCESS_TOKEN  --repo <owner>/<repo>
+gh secret set GH_FALLBACK_TOKEN    --repo <owner>/<repo>
+```
+
+> `POSTMAN_ACCESS_TOKEN` is a session token required for governance assignment and workspace linking. It expires and must be refreshed periodically (see [open-alpha docs](https://github.com/postman-cs/postman-api-onboarding-action#obtaining-postman-access-token-open-alpha)).
+
+### 2. Add API specs
+
+Place OpenAPI YAML files under `swaggerhub_apis/<project>/`:
+
+```
+swaggerhub_apis/
+└── life360/
+    ├── circles-api-1.0.0.yaml
+    ├── places-api-2.1.0.yaml
+    └── safety-api-1.0.0.yaml
+```
+
+### 3. Register APIs in the manifest
+
+Add each API to `life360-api-manifest.json`:
 
 ```json
 {
-  "POSTMAN_API_KEY": "PMAK-your-api-key",
-  "POSTMAN_WORKSPACE_ID": "your-workspace-id"
+  "organization": "Life360",
+  "domain": "life360-platform",
+  "domain_code": "L360",
+  "governance_mapping": {
+    "life360-platform": "Life360 API Platform"
+  },
+  "apis": [
+    {
+      "name": "circles-api",
+      "spec_path": "swaggerhub_apis/life360/circles-api-1.0.0.yaml",
+      "spec_url": "",
+      "environments": ["prod"],
+      "runtime_urls": {
+        "prod": "https://api.life360.com/v3"
+      }
+    },
+    {
+      "name": "places-api",
+      "spec_path": "swaggerhub_apis/life360/places-api-2.1.0.yaml",
+      "spec_url": "",
+      "environments": ["prod", "staging"],
+      "runtime_urls": {
+        "prod": "https://api.life360.com/v2",
+        "staging": "https://staging-api.life360.com/v2"
+      }
+    }
+  ]
 }
 ```
 
-> **Security:** The `test_config/` directory is git-ignored to prevent accidental credential commits. Never commit API keys.
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Unique API identifier, used in workspace and asset naming |
+| `spec_path` | Yes | Repo-relative path to the OpenAPI YAML file |
+| `spec_url` | No | Remote spec URL override (e.g. SwaggerHub URL). When blank, the workflow constructs a raw GitHub URL from `spec_path` |
+| `environments` | Yes | Environment slugs to create in Postman |
+| `runtime_urls` | No | Map of environment slug → base URL for generated environments |
 
-## Usage
+### 4. Push and watch
 
 ```bash
-python tools/upload_postman_apis.py
+git add swaggerhub_apis/ life360-api-manifest.json
+git commit -m "feat: add circles-api for v12 onboarding"
+git push
 ```
 
-### Options
+The `onboard-apis` workflow runs automatically. Check the Actions tab for a per-API summary with workspace URLs, spec IDs, and collection IDs.
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--config` | `~/.config/postman/config.json` | Path to credentials config file |
-| `--input` | `swaggerhub_apis` | Directory to scan for OpenAPI YAML files |
+To re-run a single API manually: **Actions → Onboard Life360 APIs → Run workflow** and enter the API name in the `api-filter` field.
 
-### Adding New Specs
+## Workflows
 
-1. Create a folder under `swaggerhub_apis/` with the project name
-2. Place your OpenAPI YAML file inside (e.g., `swaggerhub_apis/my-api/my-api-1.0.0.yaml`)
-3. Run the upload script — it will only process new specs (idempotent)
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| [`onboard-apis.yml`](.github/workflows/onboard-apis.yml) | Push to `main` (spec/manifest changes), `workflow_dispatch` | Full onboarding pipeline per API |
+| [`api-governance.yml`](.github/workflows/api-governance.yml) | Pull request (spec/manifest changes) | Spectral lint, manifest validation, spec structure check |
+| `postman-ci-<api-name>.yml` | Auto-generated by `repo-sync-action` | Smoke + contract tests using Postman CLI |
 
-## Included Specs
+## Governance
 
-| Path | Description |
-|------|-------------|
-| `swaggerhub_apis/life360/circles-api-1.0.0.yaml` | OpenAPI 3.0 spec for the Life360 Circles API (`GET /circles`, `GET /circles/{circleId}`) against `https://api.life360.com/v3` |
+Governance is enforced at two levels:
+
+1. **Pre-merge (CI)** — Spectral lints every OpenAPI spec against the `.spectral.yaml` ruleset. Required fields like `operationId`, `servers`, and `info.description` are enforced. The PR is blocked until all specs pass.
+
+2. **Post-merge (Postman)** — The bootstrap action assigns each workspace to the governance group defined in `governance_mapping`. Spec Hub lints the uploaded spec using Postman's built-in rules.
+
+Edit `.spectral.yaml` to add or adjust rules for Life360's API standards.
+
+## Testing
+
+After the first onboarding run, `repo-sync-action` auto-generates a CI workflow per API at `.github/workflows/postman-ci-<api-name>.yml`. These workflows use the Postman CLI to run:
+
+- **Smoke tests** — basic reachability and response shape validation
+- **Contract tests** — full schema compliance against the spec
+
+Collection UIDs and environment IDs are read from `.postman/resources.yaml` (committed by repo-sync).
 
 ## Project Structure
 
 ```
-Cust-LIFE360-spechub-uploader/
-├── tools/
-│   └── upload_postman_apis.py        # Main uploader script
-├── swaggerhub_apis/
+.
+├── .github/
+│   └── workflows/
+│       ├── onboard-apis.yml              # Main onboarding pipeline
+│       ├── api-governance.yml            # PR-time spec validation
+│       └── postman-ci-*.yml              # Auto-generated test workflows
+├── .postman/                             # Generated by repo-sync (auto-committed)
+│   └── resources.yaml
+├── .spectral.yaml                        # Spectral OpenAPI lint ruleset
+├── life360-api-manifest.json             # API registry / manifest
+├── postman/                              # Generated by repo-sync (auto-committed)
+│   ├── collections/
+│   ├── environments/
+│   └── globals/
+├── swaggerhub_apis/                      # Source OpenAPI specs
 │   └── life360/
-│       └── circles-api-1.0.0.yaml    # Sample OpenAPI spec
-├── test_config/
-│   └── config.json                   # Local test credentials (git-ignored)
-└── .gitignore
+│       └── circles-api-1.0.0.yaml
+├── tools/
+│   └── upload_postman_apis.py            # Legacy manual uploader (fallback)
+├── BUILD_LOG.md
+└── README.md
+```
+
+## Using SwaggerHub URLs Directly
+
+If Life360 specs are still hosted on SwaggerHub during migration, set `spec_url` in the manifest to the SwaggerHub download URL instead of relying on the raw GitHub fallback:
+
+```json
+{
+  "name": "circles-api",
+  "spec_path": "swaggerhub_apis/life360/circles-api-1.0.0.yaml",
+  "spec_url": "https://api.swaggerhub.com/apis/life360/circles-api/1.0.0/swagger.yaml",
+  "environments": ["prod"],
+  "runtime_urls": { "prod": "https://api.life360.com/v3" }
+}
+```
+
+The bootstrap action fetches the spec from `spec_url` and uploads it to Spec Hub. The local copy in `swaggerhub_apis/` is used for PR-time linting only.
+
+## Private Repository Note
+
+If this repository is private, the raw GitHub URL fallback (`raw.githubusercontent.com`) may not be accessible to the bootstrap action's internal fetch. In that case, provide an explicit `spec_url` pointing to a registry or hosting endpoint that the action can reach (SwaggerHub, API gateway, GitHub Pages, etc.).
+
+## Legacy Manual Script
+
+`tools/upload_postman_apis.py` is the original manual upload script. It is preserved as a fallback for ad-hoc runs outside of CI but is superseded by the GitHub Actions pipeline for production use.
+
+```bash
+pip install requests pyyaml
+python tools/upload_postman_apis.py --config test_config/config.json
 ```

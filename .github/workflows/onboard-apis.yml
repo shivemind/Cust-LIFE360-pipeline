@@ -1,0 +1,112 @@
+name: Onboard Life360 APIs to Postman v12
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'swaggerhub_apis/**'
+      - 'life360-api-manifest.json'
+  workflow_dispatch:
+    inputs:
+      api-filter:
+        description: 'Onboard a single API by name (blank = all APIs)'
+        type: string
+        default: ''
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Read the manifest and build a dynamic matrix of APIs to onboard
+  # ---------------------------------------------------------------------------
+  discover:
+    name: Discover APIs
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.parse.outputs.apis }}
+      domain: ${{ steps.parse.outputs.domain }}
+      domain_code: ${{ steps.parse.outputs.domain_code }}
+      governance: ${{ steps.parse.outputs.governance }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse manifest
+        id: parse
+        run: |
+          FILTER='${{ inputs.api-filter }}'
+          if [ -n "$FILTER" ]; then
+            APIS=$(jq -c --arg name "$FILTER" '[.apis[] | select(.name == $name)]' life360-api-manifest.json)
+          else
+            APIS=$(jq -c '.apis' life360-api-manifest.json)
+          fi
+          echo "apis=$APIS" >> "$GITHUB_OUTPUT"
+          echo "domain=$(jq -r '.domain' life360-api-manifest.json)" >> "$GITHUB_OUTPUT"
+          echo "domain_code=$(jq -r '.domain_code' life360-api-manifest.json)" >> "$GITHUB_OUTPUT"
+          echo "governance=$(jq -c '.governance_mapping' life360-api-manifest.json)" >> "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------------------
+  # 2. For each API in the matrix, run the full onboarding pipeline:
+  #    bootstrap (workspace + spec + collections + governance)
+  #    -> repo-sync (environments + monitors + CI workflow + git link)
+  # ---------------------------------------------------------------------------
+  onboard:
+    name: "${{ matrix.api.name }}"
+    needs: discover
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: write
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        api: ${{ fromJSON(needs.discover.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve spec URL
+        id: spec-url
+        run: |
+          OVERRIDE='${{ matrix.api.spec_url }}'
+          if [ -n "$OVERRIDE" ] && [ "$OVERRIDE" != "null" ]; then
+            echo "url=$OVERRIDE" >> "$GITHUB_OUTPUT"
+          else
+            echo "url=https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/${{ matrix.api.spec_path }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Onboard to Postman v12 API Catalog
+        uses: postman-cs/postman-api-onboarding-action@v0
+        id: onboard
+        with:
+          project-name: ${{ matrix.api.name }}
+          domain: ${{ needs.discover.outputs.domain }}
+          domain-code: ${{ needs.discover.outputs.domain_code }}
+          spec-url: ${{ steps.spec-url.outputs.url }}
+          spec-path: ${{ matrix.api.spec_path }}
+          environments-json: '${{ toJSON(matrix.api.environments) }}'
+          env-runtime-urls-json: '${{ toJSON(matrix.api.runtime_urls) }}'
+          governance-mapping-json: '${{ needs.discover.outputs.governance }}'
+          generate-ci-workflow: true
+          ci-workflow-path: .github/workflows/postman-ci-${{ matrix.api.name }}.yml
+          postman-api-key: ${{ secrets.POSTMAN_API_KEY }}
+          postman-access-token: ${{ secrets.POSTMAN_ACCESS_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-fallback-token: ${{ secrets.GH_FALLBACK_TOKEN }}
+
+      - name: Write onboarding summary
+        if: always()
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" << 'EOF'
+          ## ${{ matrix.api.name }}
+
+          | Asset | Value |
+          |-------|-------|
+          | Workspace | ${{ steps.onboard.outputs.workspace-url }} |
+          | Workspace ID | `${{ steps.onboard.outputs.workspace-id }}` |
+          | Spec ID | `${{ steps.onboard.outputs.spec-id }}` |
+          | Collections | `${{ steps.onboard.outputs.collections-json }}` |
+          | Environments | `${{ steps.onboard.outputs.environment-uids-json }}` |
+          | Commit SHA | `${{ steps.onboard.outputs.commit-sha }}` |
+          EOF

@@ -1,2 +1,8 @@
-# Config files with secrets
+# Credentials / secrets
 test_config/config.json
+
+# Node (used by governance workflow tooling)
+node_modules/
+
+# OS
+.DS_Store
