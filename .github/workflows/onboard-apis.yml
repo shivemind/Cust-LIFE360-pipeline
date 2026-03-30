@@ -88,8 +88,7 @@ jobs:
           environments-json: '${{ toJSON(matrix.api.environments) }}'
           env-runtime-urls-json: '${{ toJSON(matrix.api.runtime_urls) }}'
           governance-mapping-json: '${{ needs.discover.outputs.governance }}'
-          generate-ci-workflow: true
-          ci-workflow-path: .github/workflows/postman-ci-${{ matrix.api.name }}.yml
+          generate-ci-workflow: false
           postman-api-key: ${{ secrets.POSTMAN_API_KEY }}
           postman-access-token: ${{ secrets.POSTMAN_ACCESS_TOKEN }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
