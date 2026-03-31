@@ -37,7 +37,7 @@ examples:
           {
             "id": "string",
             "name": "string",
-            "memberCount": 895
+            "memberCount": 9886
           }
       headers:
         - key: Content-Type
@@ -50,7 +50,7 @@ examples:
         type: json
         content: |-
           {
-            "code": 2605,
+            "code": 5451,
             "message": "string"
           }
       headers:
@@ -64,7 +64,7 @@ examples:
         type: json
         content: |-
           {
-            "code": 2605,
+            "code": 5451,
             "message": "string"
           }
       headers:
@@ -78,7 +78,7 @@ examples:
         type: json
         content: |-
           {
-            "code": 2605,
+            "code": 5451,
             "message": "string"
           }
       headers:

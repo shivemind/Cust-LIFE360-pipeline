@@ -6,6 +6,7 @@ id: 1bf72a41-65a0-4204-a21d-cfb009d78381
 variables:
   - key: baseUrl
     value: https://api.life360.com/v3
+    type: any
 items:
   - ref: ./circles/folder.yaml
   - ref: ./00 - Resolve Secrets.request.yaml
