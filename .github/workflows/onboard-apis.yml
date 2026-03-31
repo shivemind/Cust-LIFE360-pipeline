@@ -50,6 +50,9 @@ jobs:
   # 2. For each API in the matrix, run the full onboarding pipeline:
   #    bootstrap (workspace + spec + collections + governance)
   #    -> repo-sync (environments + monitors + CI workflow + git link)
+  #
+  #    Existing asset IDs are read from .postman/resources.yaml so re-runs
+  #    reuse workspace/spec/collections instead of creating duplicates.
   # ---------------------------------------------------------------------------
   onboard:
     name: "${{ matrix.api.name }}"
@@ -76,6 +79,60 @@ jobs:
             echo "url=https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/${{ matrix.api.spec_path }}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Resolve existing asset IDs from resources.yaml
+        id: existing
+        run: |
+          RESOURCES=".postman/resources.yaml"
+          if [ ! -f "$RESOURCES" ]; then
+            echo "No resources.yaml found — first run, all assets will be created"
+            echo "workspace-id=" >> "$GITHUB_OUTPUT"
+            echo "baseline-collection-id=" >> "$GITHUB_OUTPUT"
+            echo "smoke-collection-id=" >> "$GITHUB_OUTPUT"
+            echo "contract-collection-id=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Found resources.yaml — extracting existing asset IDs for reuse"
+
+          WORKSPACE_ID=$(python3 -c "
+          import yaml
+          with open('$RESOURCES') as f:
+              data = yaml.safe_load(f)
+          print(data.get('workspace', {}).get('id', ''))
+          ")
+
+          python3 -c "
+          import yaml, os
+          with open('$RESOURCES') as f:
+              data = yaml.safe_load(f)
+          cloud = data.get('cloudResources', {})
+          collections = cloud.get('collections', {})
+
+          baseline = ''
+          smoke = ''
+          contract = ''
+          for path, uid in collections.items():
+              if '[Baseline]' in path:
+                  baseline = uid
+              elif '[Smoke]' in path:
+                  smoke = uid
+              elif '[Contract]' in path:
+                  contract = uid
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
+              out.write(f'workspace-id={WORKSPACE_ID}\n' if '$WORKSPACE_ID' else '')
+              out.write(f'baseline-collection-id={baseline}\n')
+              out.write(f'smoke-collection-id={smoke}\n')
+              out.write(f'contract-collection-id={contract}\n')
+          "
+
+          echo "workspace-id=$WORKSPACE_ID" >> "$GITHUB_OUTPUT"
+
+          echo "  workspace-id=$WORKSPACE_ID"
+          echo "  baseline=$(grep '\[Baseline\]' "$RESOURCES" | head -1)"
+          echo "  smoke=$(grep '\[Smoke\]' "$RESOURCES" | head -1)"
+          echo "  contract=$(grep '\[Contract\]' "$RESOURCES" | head -1)"
+
       - name: Onboard to Postman v12 API Catalog
         uses: postman-cs/postman-api-onboarding-action@v0
         id: onboard
@@ -83,6 +140,10 @@ jobs:
           project-name: ${{ matrix.api.name }}
           domain: ${{ needs.discover.outputs.domain }}
           domain-code: ${{ needs.discover.outputs.domain_code }}
+          workspace-id: ${{ steps.existing.outputs.workspace-id }}
+          baseline-collection-id: ${{ steps.existing.outputs.baseline-collection-id }}
+          smoke-collection-id: ${{ steps.existing.outputs.smoke-collection-id }}
+          contract-collection-id: ${{ steps.existing.outputs.contract-collection-id }}
           spec-url: ${{ steps.spec-url.outputs.url }}
           spec-path: ${{ matrix.api.spec_path }}
           environments-json: '${{ toJSON(matrix.api.environments) }}'
