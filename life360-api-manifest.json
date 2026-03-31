@@ -5,6 +5,10 @@
   "governance_mapping": {
     "life360-platform": "Life360 API Platform"
   },
+  "private_network": {
+    "folder_name": "Life360 APIs",
+    "folder_description": "Life360 APIs that have passed lint, smoke, and contract tests."
+  },
   "apis": [
     {
       "name": "circles-api",

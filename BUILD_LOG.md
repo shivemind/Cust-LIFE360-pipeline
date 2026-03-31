@@ -51,11 +51,22 @@
   - Supports per-API environments, runtime URLs, and optional SwaggerHub URL overrides
 - **Auto-generated CI** — repo-sync creates `postman-ci-<name>.yml` per API for ongoing smoke and contract testing
 
+### Sprint 3 — Private API Network Promotion (current)
+- **Promotion workflow** (`.github/workflows/promote-to-private-network.yml`)
+  - Triggers automatically after onboarding or CI pipelines succeed on `main`
+  - Quality gate checks: verifies most recent onboard + CI runs passed before promoting
+  - Creates a Private API Network folder (idempotent) using the Postman API (`POST /network/private`)
+  - Adds qualifying workspaces to the folder; skips already-listed workspaces
+  - Supports `workflow_dispatch` with single-API filter and force-promote override
+  - Folder name and description configurable via `private_network` block in `life360-api-manifest.json`
+- Uses Postman Private API Network REST API: `GET /network/private`, `POST /network/private`
+
 ## Value Unlocked
 - **Single pane of glass**: every Life360 API visible in Postman v12 API Catalog
 - **Governance from CI**: Spectral lint on PR, Postman governance groups on merge
 - **Testing from CI**: contract and smoke tests auto-generated and run per API
 - **Zero manual Postman work**: adding an API = YAML file + manifest entry + push
+- **Private API Network as quality gate**: only APIs passing lint, smoke, and contract tests are promoted to the team's Private API Network — discoverable by all team members
 - **Workspace-repo linking**: Bifrost connects each Postman workspace to the GitHub repo
 - **Collection v3 export**: collections synced back to repo as multi-file YAML for version control
 

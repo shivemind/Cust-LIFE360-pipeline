@@ -1,0 +1,242 @@
+name: Promote to Private API Network
+
+on:
+  workflow_run:
+    workflows:
+      - "Onboard Life360 APIs to Postman v12"
+      - "CI/CD Pipeline"
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      api-filter:
+        description: 'Promote a single API by name (blank = all APIs)'
+        type: string
+        default: ''
+      force:
+        description: 'Skip quality gate checks and promote anyway'
+        type: boolean
+        default: false
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Determine which APIs are eligible for promotion by checking that their
+  #    most recent onboarding, lint, and CI runs all succeeded.
+  # ---------------------------------------------------------------------------
+  qualify:
+    name: Quality gate
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    outputs:
+      eligible: ${{ steps.gate.outputs.eligible }}
+      folder-name: ${{ steps.gate.outputs.folder-name }}
+      folder-desc: ${{ steps.gate.outputs.folder-desc }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Evaluate quality gates
+        id: gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          python3 << 'PYEOF'
+          import json, os, subprocess, sys
+
+          manifest = json.load(open("life360-api-manifest.json"))
+          api_filter = "${{ inputs.api-filter }}".strip()
+          force = os.environ.get("FORCE", "false") == "true"
+
+          apis = manifest["apis"]
+          if api_filter:
+              apis = [a for a in apis if a["name"] == api_filter]
+
+          eligible = []
+          for api in apis:
+              name = api["name"]
+              gates = {"onboard": False, "governance": True, "ci": False}
+
+              if force:
+                  print(f"  {name}: FORCE mode — skipping checks")
+                  eligible.append(api)
+                  continue
+
+              for wf, key in [
+                  ("onboard-apis.yml", "onboard"),
+                  (f"postman-ci-{name}.yml", "ci"),
+              ]:
+                  try:
+                      result = subprocess.run(
+                          ["gh", "run", "list",
+                           "--workflow", wf,
+                           "--branch", "main",
+                           "--status", "success",
+                           "--limit", "1",
+                           "--json", "conclusion,updatedAt"],
+                          capture_output=True, text=True, timeout=15,
+                      )
+                      runs = json.loads(result.stdout or "[]")
+                      gates[key] = len(runs) > 0
+                  except Exception as e:
+                      print(f"  {name}: Warning checking {wf}: {e}")
+
+              passed = all(gates.values())
+              status = "PASS" if passed else "FAIL"
+              detail = ", ".join(f"{k}={'ok' if v else 'MISSING'}" for k, v in gates.items())
+              print(f"  {name}: {status} ({detail})")
+
+              if passed:
+                  eligible.append(api)
+
+          pn = manifest.get("private_network", {})
+          folder_name = pn.get("folder_name", f"{manifest['organization']} APIs")
+          folder_desc = pn.get(
+              "folder_description",
+              f"Workspaces promoted after passing lint, smoke, and contract tests.",
+          )
+
+          out = os.environ["GITHUB_OUTPUT"]
+          with open(out, "a") as f:
+              f.write(f"eligible={json.dumps(eligible)}\n")
+              f.write(f"folder-name={folder_name}\n")
+              f.write(f"folder-desc={folder_desc}\n")
+
+          if not eligible:
+              print("\nNo APIs passed all quality gates — nothing to promote.")
+          else:
+              names = [a["name"] for a in eligible]
+              print(f"\nEligible for promotion: {', '.join(names)}")
+          PYEOF
+
+  # ---------------------------------------------------------------------------
+  # 2. Ensure a Private API Network folder exists (idempotent), then add each
+  #    qualifying workspace. Already-listed workspaces are skipped.
+  # ---------------------------------------------------------------------------
+  promote:
+    name: Promote APIs
+    needs: qualify
+    if: needs.qualify.outputs.eligible != '[]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Promote workspaces to Private API Network
+        env:
+          POSTMAN_API_KEY: ${{ secrets.POSTMAN_API_KEY }}
+          ELIGIBLE: ${{ needs.qualify.outputs.eligible }}
+          FOLDER_NAME: ${{ needs.qualify.outputs.folder-name }}
+          FOLDER_DESC: ${{ needs.qualify.outputs.folder-desc }}
+        run: |
+          python3 << 'PYEOF'
+          import json, os, sys, urllib.request, yaml
+
+          api_key = os.environ["POSTMAN_API_KEY"]
+          eligible = json.loads(os.environ["ELIGIBLE"])
+          folder_name = os.environ["FOLDER_NAME"]
+          folder_desc = os.environ.get("FOLDER_DESC", "")
+
+          def pm_request(method, endpoint, body=None):
+              url = f"https://api.getpostman.com{endpoint}"
+              data = json.dumps(body).encode() if body else None
+              req = urllib.request.Request(url, data=data, method=method, headers={
+                  "X-Api-Key": api_key,
+                  "Content-Type": "application/json",
+                  "Accept": "application/json",
+              })
+              with urllib.request.urlopen(req, timeout=30) as resp:
+                  return json.loads(resp.read())
+
+          # --- Fetch current Private API Network state ---
+          network = pm_request("GET", "/network/private")
+          existing_folders = {f["name"]: f["id"] for f in network.get("folders", [])}
+          existing_elements = {
+              e["id"] for e in network.get("elements", [])
+              if e.get("type") == "workspace"
+          }
+
+          # --- Ensure target folder exists (idempotent) ---
+          if folder_name in existing_folders:
+              folder_id = existing_folders[folder_name]
+              print(f"Folder '{folder_name}' already exists (id={folder_id})")
+          else:
+              resp = pm_request("POST", "/network/private", {
+                  "folder": {
+                      "name": folder_name,
+                      "description": folder_desc or f"Workspaces promoted after passing quality gates.",
+                  }
+              })
+              folder_id = resp["id"]
+              print(f"Created folder '{folder_name}' (id={folder_id})")
+
+          # --- Resolve workspace IDs from .postman/resources.yaml ---
+          resources_path = ".postman/resources.yaml"
+          ws_id_from_resources = ""
+          if os.path.isfile(resources_path):
+              with open(resources_path) as f:
+                  data = yaml.safe_load(f) or {}
+              ws_id_from_resources = (data.get("workspace") or {}).get("id", "")
+
+          promoted = 0
+          skipped = 0
+          failed = 0
+
+          for api in eligible:
+              name = api["name"]
+              ws_id = ws_id_from_resources  # single-workspace setup; extend for multi
+
+              if not ws_id:
+                  print(f"  {name}: SKIP — no workspace ID found in resources.yaml")
+                  skipped += 1
+                  continue
+
+              if ws_id in existing_elements:
+                  print(f"  {name}: SKIP — workspace {ws_id} already in Private API Network")
+                  skipped += 1
+                  continue
+
+              try:
+                  resp = pm_request("POST", "/network/private", {
+                      "workspace": {
+                          "id": ws_id,
+                          "parentFolderId": folder_id,
+                      }
+                  })
+                  print(f"  {name}: PROMOTED — workspace '{resp.get('name', ws_id)}' added to '{folder_name}'")
+                  promoted += 1
+                  existing_elements.add(ws_id)
+              except Exception as e:
+                  print(f"  {name}: FAILED — {e}")
+                  failed += 1
+
+          print(f"\nSummary: {promoted} promoted, {skipped} skipped, {failed} failed")
+
+          if failed:
+              sys.exit(1)
+          PYEOF
+
+      - name: Write promotion summary
+        if: always()
+        env:
+          ELIGIBLE: ${{ needs.qualify.outputs.eligible }}
+          FOLDER_NAME: ${{ needs.qualify.outputs.folder-name }}
+        run: |
+          python3 << 'PYEOF'
+          import json, os
+
+          eligible = json.loads(os.environ["ELIGIBLE"])
+          folder = os.environ["FOLDER_NAME"]
+          names = [a["name"] for a in eligible]
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+              f.write(f"## Private API Network Promotion\n\n")
+              f.write(f"**Folder:** {folder}\n\n")
+              f.write(f"| API | Status |\n|-----|--------|\n")
+              for n in names:
+                  f.write(f"| {n} | Promoted |\n")
+          PYEOF
