@@ -43,12 +43,15 @@ jobs:
           RUBY
 
       - name: Decode SSL certificates
-        if: ${{ secrets.POSTMAN_SSL_CLIENT_CERT_B64 != '' }}
         env:
           POSTMAN_SSL_CLIENT_CERT_B64: ${{ secrets.POSTMAN_SSL_CLIENT_CERT_B64 }}
           POSTMAN_SSL_CLIENT_KEY_B64: ${{ secrets.POSTMAN_SSL_CLIENT_KEY_B64 }}
           POSTMAN_SSL_EXTRA_CA_CERTS_B64: ${{ secrets.POSTMAN_SSL_EXTRA_CA_CERTS_B64 }}
         run: |
+          if [ -z "$POSTMAN_SSL_CLIENT_CERT_B64" ]; then
+            echo "No SSL client cert configured — skipping"
+            exit 0
+          fi
           mkdir -p "$RUNNER_TEMP/postman-ssl"
           printf %s "$POSTMAN_SSL_CLIENT_CERT_B64" | base64 -d > "$RUNNER_TEMP/postman-ssl/client.crt"
           printf %s "$POSTMAN_SSL_CLIENT_KEY_B64" | base64 -d > "$RUNNER_TEMP/postman-ssl/client.key"
