@@ -47,12 +47,11 @@ jobs:
           echo "governance=$(jq -c '.governance_mapping' life360-api-manifest.json)" >> "$GITHUB_OUTPUT"
 
   # ---------------------------------------------------------------------------
-  # 2. For each API in the matrix, run the full onboarding pipeline:
-  #    bootstrap (workspace + spec + collections + governance)
-  #    -> repo-sync (environments + monitors + CI workflow + git link)
+  # 2. For each API in the matrix, run the full onboarding pipeline.
   #
-  #    Existing asset IDs are read from .postman/resources.yaml so re-runs
-  #    reuse workspace/spec/collections instead of creating duplicates.
+  #    Existing asset IDs are resolved from .postman/resources.yaml and the
+  #    Postman API so re-runs reuse everything (idempotent).
+  #    collection-sync-mode=reuse prevents regenerating collections each run.
   # ---------------------------------------------------------------------------
   onboard:
     name: "${{ matrix.api.name }}"
@@ -79,50 +78,88 @@ jobs:
             echo "url=https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/${{ matrix.api.spec_path }}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Resolve existing asset IDs from resources.yaml
+      - name: Resolve existing Postman asset IDs
         id: existing
+        env:
+          POSTMAN_API_KEY: ${{ secrets.POSTMAN_API_KEY }}
         run: |
           python3 << 'PYEOF'
-          import os, yaml
+          import json, os, sys, urllib.request, yaml
 
-          resources_path = ".postman/resources.yaml"
           out_path = os.environ["GITHUB_OUTPUT"]
+          api_key = os.environ.get("POSTMAN_API_KEY", "")
+          api_name = "${{ matrix.api.name }}"
 
-          defaults = {
+          def pm_get(endpoint, params=""):
+              url = f"https://api.getpostman.com{endpoint}{'?' + params if params else ''}"
+              req = urllib.request.Request(url, headers={
+                  "X-Api-Key": api_key,
+                  "Accept": "application/vnd.api.v10+json",
+              })
+              with urllib.request.urlopen(req, timeout=15) as resp:
+                  return json.loads(resp.read())
+
+          results = {
               "workspace-id": "",
+              "spec-id": "",
               "baseline-collection-id": "",
               "smoke-collection-id": "",
               "contract-collection-id": "",
+              "monitor-id": "",
+              "mock-url": "",
           }
 
-          if not os.path.isfile(resources_path):
-              print("No resources.yaml found — first run, all assets will be created")
+          # --- resources.yaml: workspace + collections ---
+          resources_path = ".postman/resources.yaml"
+          if os.path.isfile(resources_path):
+              with open(resources_path) as f:
+                  data = yaml.safe_load(f) or {}
+              results["workspace-id"] = (data.get("workspace") or {}).get("id", "")
+              for path, uid in (data.get("cloudResources") or {}).get("collections", {}).items():
+                  if "[Baseline]" in path:
+                      results["baseline-collection-id"] = uid
+                  elif "[Smoke]" in path:
+                      results["smoke-collection-id"] = uid
+                  elif "[Contract]" in path:
+                      results["contract-collection-id"] = uid
+
+          ws_id = results["workspace-id"]
+          if not ws_id or not api_key:
+              print("First run or no API key — all assets will be created fresh")
               with open(out_path, "a") as f:
-                  for k, v in defaults.items():
+                  for k, v in results.items():
                       f.write(f"{k}={v}\n")
               raise SystemExit(0)
 
-          with open(resources_path) as f:
-              data = yaml.safe_load(f) or {}
+          # --- Postman API: find existing spec by name in workspace ---
+          try:
+              specs = pm_get("/specs", f"workspaceId={ws_id}").get("specs", [])
+              for s in specs:
+                  if s.get("name") == api_name:
+                      results["spec-id"] = s["id"]
+                      break
+          except Exception as e:
+              print(f"  Warning: spec lookup failed: {e}")
 
-          ws_id = (data.get("workspace") or {}).get("id", "")
-          collections = (data.get("cloudResources") or {}).get("collections") or {}
+          # --- Postman API: find existing mock by name in workspace ---
+          try:
+              mocks = pm_get("/mocks").get("mocks", [])
+              for m in mocks:
+                  if api_name in m.get("name", "") and m.get("mockUrl"):
+                      results["mock-url"] = m["mockUrl"]
+                      break
+          except Exception as e:
+              print(f"  Warning: mock lookup failed: {e}")
 
-          baseline = smoke = contract = ""
-          for path, uid in collections.items():
-              if "[Baseline]" in path:
-                  baseline = uid
-              elif "[Smoke]" in path:
-                  smoke = uid
-              elif "[Contract]" in path:
-                  contract = uid
-
-          results = {
-              "workspace-id": ws_id,
-              "baseline-collection-id": baseline,
-              "smoke-collection-id": smoke,
-              "contract-collection-id": contract,
-          }
+          # --- Postman API: find existing monitor by name ---
+          try:
+              monitors = pm_get("/monitors").get("monitors", [])
+              for m in monitors:
+                  if api_name in m.get("name", ""):
+                      results["monitor-id"] = m["uid"]
+                      break
+          except Exception as e:
+              print(f"  Warning: monitor lookup failed: {e}")
 
           with open(out_path, "a") as f:
               for k, v in results.items():
@@ -130,7 +167,7 @@ jobs:
 
           print("Resolved existing asset IDs for reuse:")
           for k, v in results.items():
-              print(f"  {k}={v}")
+              print(f"  {k}={v or '(will create)'}")
           PYEOF
 
       - name: Onboard to Postman v12 API Catalog
@@ -141,9 +178,13 @@ jobs:
           domain: ${{ needs.discover.outputs.domain }}
           domain-code: ${{ needs.discover.outputs.domain_code }}
           workspace-id: ${{ steps.existing.outputs.workspace-id }}
+          spec-id: ${{ steps.existing.outputs.spec-id }}
           baseline-collection-id: ${{ steps.existing.outputs.baseline-collection-id }}
           smoke-collection-id: ${{ steps.existing.outputs.smoke-collection-id }}
           contract-collection-id: ${{ steps.existing.outputs.contract-collection-id }}
+          monitor-id: ${{ steps.existing.outputs.monitor-id }}
+          mock-url: ${{ steps.existing.outputs.mock-url }}
+          collection-sync-mode: reuse
           spec-url: ${{ steps.spec-url.outputs.url }}
           spec-path: ${{ matrix.api.spec_path }}
           environments-json: '${{ toJSON(matrix.api.environments) }}'
