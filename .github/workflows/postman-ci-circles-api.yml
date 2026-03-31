@@ -1,1 +1,97 @@
-name: CI/CD Pipeline\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n  schedule:\n    - cron: "0 */6 * * *"\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - name: Install Postman CLI\n        run: curl -o- "https://dl-cli.pstmn.io/install/unix.sh" | sh\n      - name: Login to Postman CLI\n        run: postman login --with-api-key ${{ secrets.POSTMAN_API_KEY }}\n      - name: Resolve Postman Resource IDs\n        run: |\n          ruby <<'RUBY'\n          require 'yaml'\n          config = YAML.load_file('.postman/resources.yaml') || {}\n          cloud = config.fetch('cloudResources', {})\n          collections = cloud.fetch('collections', {})\n          environments = cloud.fetch('environments', {})\n          smoke = collections.find { |path, _| path.include?('[Smoke]') }&.last\n          contract = collections.find { |path, _| path.include?('[Contract]') }&.last\n          environment = environments.find { |path, _| path.end_with?('/prod.postman_environment.json') }&.last || environments.values.first\n          missing = []\n          missing << 'smoke collection' unless smoke\n          missing << 'contract collection' unless contract\n          missing << 'environment' unless environment\n          abort("Missing Postman resource IDs in .postman/resources.yaml: #{missing.join(', ')}") unless missing.empty?\n          File.open(ENV.fetch('GITHUB_ENV'), 'a') do |file|\n            file.puts("POSTMAN_SMOKE_COLLECTION_UID=#{smoke}")\n            file.puts("POSTMAN_CONTRACT_COLLECTION_UID=#{contract}")\n            file.puts("POSTMAN_ENVIRONMENT_UID=#{environment}")\n          end\n          RUBY\n      - name: Decode SSL certificates\n        if: ${{ secrets.POSTMAN_SSL_CLIENT_CERT_B64 != '' }}\n        env:\n          POSTMAN_SSL_CLIENT_CERT_B64: ${{ secrets.POSTMAN_SSL_CLIENT_CERT_B64 }}\n          POSTMAN_SSL_CLIENT_KEY_B64: ${{ secrets.POSTMAN_SSL_CLIENT_KEY_B64 }}\n          POSTMAN_SSL_EXTRA_CA_CERTS_B64: ${{ secrets.POSTMAN_SSL_EXTRA_CA_CERTS_B64 }}\n        run: |\n          mkdir -p "$RUNNER_TEMP/postman-ssl"\n          printf %s "$POSTMAN_SSL_CLIENT_CERT_B64" | base64 -d > "$RUNNER_TEMP/postman-ssl/client.crt"\n          printf %s "$POSTMAN_SSL_CLIENT_KEY_B64" | base64 -d > "$RUNNER_TEMP/postman-ssl/client.key"\n          if [ -n "$POSTMAN_SSL_EXTRA_CA_CERTS_B64" ]; then\n            printf %s "$POSTMAN_SSL_EXTRA_CA_CERTS_B64" | base64 -d > "$RUNNER_TEMP/postman-ssl/ca.crt"\n          fi\n      - name: Run Smoke Tests\n        env:\n          POSTMAN_SSL_CLIENT_PASSPHRASE: ${{ secrets.POSTMAN_SSL_CLIENT_PASSPHRASE }}\n        run: |\n          CMD=(postman collection run "$POSTMAN_SMOKE_COLLECTION_UID"\n            -e "$POSTMAN_ENVIRONMENT_UID"\n            --report-events\n            --env-var "${{ vars.CI_ENVIRONMENT || 'Production' }}")\n          if [ -f "$RUNNER_TEMP/postman-ssl/client.crt" ]; then\n            CMD+=(--ssl-client-cert "$RUNNER_TEMP/postman-ssl/client.crt"\n              --ssl-client-key "$RUNNER_TEMP/postman-ssl/client.key")\n            if [ -n "$POSTMAN_SSL_CLIENT_PASSPHRASE" ]; then\n              CMD+=(--ssl-client-passphrase "$POSTMAN_SSL_CLIENT_PASSPHRASE")\n            fi\n            if [ -f "$RUNNER_TEMP/postman-ssl/ca.crt" ]; then\n              CMD+=(--ssl-extra-ca-certs "$RUNNER_TEMP/postman-ssl/ca.crt")\n            fi\n          fi\n          "${CMD[@]}"\n      - name: Run Contract Tests\n        env:\n          POSTMAN_SSL_CLIENT_PASSPHRASE: ${{ secrets.POSTMAN_SSL_CLIENT_PASSPHRASE }}\n        run: |\n          CMD=(postman collection run "$POSTMAN_CONTRACT_COLLECTION_UID"\n            -e "$POSTMAN_ENVIRONMENT_UID"\n            --report-events\n            --env-var "${{ vars.CI_ENVIRONMENT || 'Production' }}")\n          if [ -f "$RUNNER_TEMP/postman-ssl/client.crt" ]; then\n            CMD+=(--ssl-client-cert "$RUNNER_TEMP/postman-ssl/client.crt"\n              --ssl-client-key "$RUNNER_TEMP/postman-ssl/client.key")\n            if [ -n "$POSTMAN_SSL_CLIENT_PASSPHRASE" ]; then\n              CMD+=(--ssl-client-passphrase "$POSTMAN_SSL_CLIENT_PASSPHRASE")\n            fi\n            if [ -f "$RUNNER_TEMP/postman-ssl/ca.crt" ]; then\n              CMD+=(--ssl-extra-ca-certs "$RUNNER_TEMP/postman-ssl/ca.crt")\n            fi\n          fi\n          "${CMD[@]}"\n
+name: CI/CD Pipeline
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "0 */6 * * *"
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Postman CLI
+        run: curl -o- "https://dl-cli.pstmn.io/install/unix.sh" | sh
+
+      - name: Login to Postman CLI
+        run: postman login --with-api-key ${{ secrets.POSTMAN_API_KEY }}
+
+      - name: Resolve Postman Resource IDs
+        run: |
+          ruby <<'RUBY'
+          require 'yaml'
+          config = YAML.load_file('.postman/resources.yaml') || {}
+          cloud = config.fetch('cloudResources', {})
+          collections = cloud.fetch('collections', {})
+          environments = cloud.fetch('environments', {})
+          smoke = collections.find { |path, _| path.include?('[Smoke]') }&.last
+          contract = collections.find { |path, _| path.include?('[Contract]') }&.last
+          environment = environments.find { |path, _| path.end_with?('/prod.postman_environment.json') }&.last || environments.values.first
+          missing = []
+          missing << 'smoke collection' unless smoke
+          missing << 'contract collection' unless contract
+          missing << 'environment' unless environment
+          abort("Missing Postman resource IDs in .postman/resources.yaml: #{missing.join(', ')}") unless missing.empty?
+          File.open(ENV.fetch('GITHUB_ENV'), 'a') do |file|
+            file.puts("POSTMAN_SMOKE_COLLECTION_UID=#{smoke}")
+            file.puts("POSTMAN_CONTRACT_COLLECTION_UID=#{contract}")
+            file.puts("POSTMAN_ENVIRONMENT_UID=#{environment}")
+          end
+          RUBY
+
+      - name: Decode SSL certificates
+        if: ${{ secrets.POSTMAN_SSL_CLIENT_CERT_B64 != '' }}
+        env:
+          POSTMAN_SSL_CLIENT_CERT_B64: ${{ secrets.POSTMAN_SSL_CLIENT_CERT_B64 }}
+          POSTMAN_SSL_CLIENT_KEY_B64: ${{ secrets.POSTMAN_SSL_CLIENT_KEY_B64 }}
+          POSTMAN_SSL_EXTRA_CA_CERTS_B64: ${{ secrets.POSTMAN_SSL_EXTRA_CA_CERTS_B64 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/postman-ssl"
+          printf %s "$POSTMAN_SSL_CLIENT_CERT_B64" | base64 -d > "$RUNNER_TEMP/postman-ssl/client.crt"
+          printf %s "$POSTMAN_SSL_CLIENT_KEY_B64" | base64 -d > "$RUNNER_TEMP/postman-ssl/client.key"
+          if [ -n "$POSTMAN_SSL_EXTRA_CA_CERTS_B64" ]; then
+            printf %s "$POSTMAN_SSL_EXTRA_CA_CERTS_B64" | base64 -d > "$RUNNER_TEMP/postman-ssl/ca.crt"
+          fi
+
+      - name: Run Smoke Tests
+        env:
+          POSTMAN_SSL_CLIENT_PASSPHRASE: ${{ secrets.POSTMAN_SSL_CLIENT_PASSPHRASE }}
+        run: |
+          CMD=(postman collection run "$POSTMAN_SMOKE_COLLECTION_UID"
+            -e "$POSTMAN_ENVIRONMENT_UID"
+            --report-events
+            --env-var "${{ vars.CI_ENVIRONMENT || 'Production' }}")
+          if [ -f "$RUNNER_TEMP/postman-ssl/client.crt" ]; then
+            CMD+=(--ssl-client-cert "$RUNNER_TEMP/postman-ssl/client.crt"
+              --ssl-client-key "$RUNNER_TEMP/postman-ssl/client.key")
+            if [ -n "$POSTMAN_SSL_CLIENT_PASSPHRASE" ]; then
+              CMD+=(--ssl-client-passphrase "$POSTMAN_SSL_CLIENT_PASSPHRASE")
+            fi
+            if [ -f "$RUNNER_TEMP/postman-ssl/ca.crt" ]; then
+              CMD+=(--ssl-extra-ca-certs "$RUNNER_TEMP/postman-ssl/ca.crt")
+            fi
+          fi
+          "${CMD[@]}"
+
+      - name: Run Contract Tests
+        env:
+          POSTMAN_SSL_CLIENT_PASSPHRASE: ${{ secrets.POSTMAN_SSL_CLIENT_PASSPHRASE }}
+        run: |
+          CMD=(postman collection run "$POSTMAN_CONTRACT_COLLECTION_UID"
+            -e "$POSTMAN_ENVIRONMENT_UID"
+            --report-events
+            --env-var "${{ vars.CI_ENVIRONMENT || 'Production' }}")
+          if [ -f "$RUNNER_TEMP/postman-ssl/client.crt" ]; then
+            CMD+=(--ssl-client-cert "$RUNNER_TEMP/postman-ssl/client.crt"
+              --ssl-client-key "$RUNNER_TEMP/postman-ssl/client.key")
+            if [ -n "$POSTMAN_SSL_CLIENT_PASSPHRASE" ]; then
+              CMD+=(--ssl-client-passphrase "$POSTMAN_SSL_CLIENT_PASSPHRASE")
+            fi
+            if [ -f "$RUNNER_TEMP/postman-ssl/ca.crt" ]; then
+              CMD+=(--ssl-extra-ca-certs "$RUNNER_TEMP/postman-ssl/ca.crt")
+            fi
+          fi
+          "${CMD[@]}"
