@@ -1,4 +1,0 @@
-type: folder
-name: '{circleId}'
-items:
-  - ref: ./Get a circle.request.yaml

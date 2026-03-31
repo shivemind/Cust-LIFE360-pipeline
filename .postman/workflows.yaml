@@ -1,8 +1,0 @@
-workflows:
-  syncSpecToCollection:
-    - spec: ../swaggerhub_apis/life360/circles-api-1.0.0.yaml
-      collection: ../postman/collections/[Baseline] circles-api
-    - spec: ../swaggerhub_apis/life360/circles-api-1.0.0.yaml
-      collection: ../postman/collections/[Smoke] circles-api
-    - spec: ../swaggerhub_apis/life360/circles-api-1.0.0.yaml
-      collection: ../postman/collections/[Contract] circles-api
