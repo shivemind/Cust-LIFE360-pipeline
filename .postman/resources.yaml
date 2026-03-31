@@ -11,8 +11,8 @@ localResources:
     - ../swaggerhub_apis/life360/circles-api-1.0.0.yaml
 cloudResources:
   collections:
-    ../postman/collections/[Baseline] circles-api: 52400725-e8c6b719-8581-4142-bf51-8674bfaf75cc
-    ../postman/collections/[Smoke] circles-api: 52400725-eeddacfe-c24e-4617-a547-365c7823385a
-    ../postman/collections/[Contract] circles-api: 52400725-e17c4591-64f4-408b-9fdb-83de306538ca
+    ../postman/collections/[Baseline] circles-api: 52400725-b7144369-5d02-4eac-8f63-58165621b451
+    ../postman/collections/[Smoke] circles-api: 52400725-2c64ed7a-ec74-44cc-af5f-d825f0c69557
+    ../postman/collections/[Contract] circles-api: 52400725-576d0839-bed7-4198-b501-001514308d06
   environments:
     ../postman/environments/prod.postman_environment.json: 52400725-17521d43-4746-4a44-8daa-a18859ddfdc6
