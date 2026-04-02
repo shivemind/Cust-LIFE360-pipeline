@@ -84,15 +84,40 @@
   - **Passthrough with import guidance**: GraphQL SDL, Protobuf, AsyncAPI (Postman-native), WSDL, HAR (manual/UI import)
 - Designed as the first stage of any API-platform-to-Postman migration
 
+### Sprint 5 — End-to-End Migration Pipeline with Spec Normalizer (completed April 2 2026)
+- **Full pipeline test**: ingested 5 Life360 SwaggerHub YAML exports through the complete normalizer → repo-per-service → Postman onboarding pipeline
+- **Spec-Migration-Normalize as first-class layer**:
+  - Ran `ingest.py` in `repo-per-service` mode against `~/Desktop/life360-swaggerhub-exports/`
+  - Detected all 5 specs as OpenAPI 3.x, normalized, and scaffolded self-contained repo directories
+  - Each scaffolded repo includes: spec, manifest, onboard/governance/promote workflows, .spectral.yaml, README
+- **Per-service GitHub repos created** — one repo per API (one repo, one service, one workspace pattern):
+  - `danielshively-source/life360-circles-api`
+  - `danielshively-source/life360-location-api`
+  - `danielshively-source/life360-notifications-api`
+  - `danielshively-source/life360-places-api`
+  - `danielshively-source/life360-safety-api`
+- **Secrets provisioned** — `POSTMAN_API_KEY` and `GH_FALLBACK_TOKEN` set on all 5 repos
+- **Onboarding verified** — all 5 `onboard-apis.yml` workflows completed successfully:
+  - 5 Postman workspaces created: `[L360] circles-api`, `[L360] location-api`, `[L360] notifications-api`, `[L360] places-api`, `[L360] safety-api`
+  - 5 specs uploaded to Spec Hub
+  - 15 collections generated (Baseline + Smoke + Contract per API)
+  - Environments (prod, staging) created per workspace
+  - CI test workflows auto-generated and committed to each repo
+- **Issue found & fixed**: first onboard run failed at git push because default `GITHUB_TOKEN` lacks `workflows` permission to create `.github/workflows/` files. Fix: set `GH_FALLBACK_TOKEN` (PAT with `workflow` scope) on each repo, then re-triggered. Second run succeeded and committed all artifacts.
+- **Orphan cleanup**: first run created workspaces but couldn't commit `.postman/resources.yaml`; second run created new workspaces. Deleted 5 orphaned workspaces via API.
+- **Enterprise PMAK rotated** — updated `POSTMAN_API_KEY` secret and local `test_config/config.json`
+
 ### Companion Repo: PrivateAPI-promote-auto
 - Standalone composite GitHub Action for quality-gated Private API Network promotion
 - Reusable across customers; takes `postman-api-key`, `workspace-id`, `folder-name` as inputs
 
-## Verified Pipeline Flow (March 31 2026)
-1. `onboard-apis.yml` → discover manifest → bootstrap workspace + Spec Hub + collections + governance → repo-sync (environments, mock, monitor, CI workflow, Bifrost link) → commit & push
-2. `postman-ci-circles-api.yml` → install Postman CLI → resolve resource IDs from `.postman/resources.yaml` → run smoke tests → run contract tests → upload results to Postman Cloud
-3. `promote-to-private-network.yml` → quality gate (check onboard + CI success) → create PAN folder → add workspace
-4. Spec Hub confirmed as source of truth: spec loaded first, then all collections derived from the spec
+## Verified Pipeline Flow (April 2 2026 — full 5-API run)
+1. **Spec-Migration-Normalize** (local) → detect format → normalize → scaffold per-service repo (spec + manifest + workflows + .spectral.yaml)
+2. **Repo creation** → `gh repo create` per service → set `POSTMAN_API_KEY` + `GH_FALLBACK_TOKEN` secrets → `git push`
+3. `onboard-apis.yml` → discover manifest → bootstrap workspace + Spec Hub + collections + governance → repo-sync (environments, mock, monitor, CI workflow, Bifrost link) → commit & push
+4. `postman-ci-<name>.yml` → install Postman CLI → resolve resource IDs from `.postman/resources.yaml` → run smoke tests → run contract tests → upload results to Postman Cloud
+5. `promote-to-private-network.yml` → quality gate (check onboard + CI success) → create PAN folder → add workspace
+6. Spec Hub confirmed as source of truth: spec loaded first, then all collections derived from the spec
 
 ## Value Unlocked
 - **Single pane of glass**: every Life360 API visible in Postman v12 API Catalog
@@ -120,11 +145,21 @@
 - Rate limits on Postman API may affect large catalog migrations (no backoff in actions yet)
 - RAML 1.0 not supported by `api-spec-converter` (only RAML 0.8); `postman-to-openapi` requires Collection v2.1
 
+## Postman Workspaces (as of April 2 2026)
+
+| Service | Workspace ID | URL |
+|---------|-------------|-----|
+| circles-api | `48e4d8a0-d797-4be4-ad33-6a7f7674bf00` | [Open](https://go.postman.co/workspace/48e4d8a0-d797-4be4-ad33-6a7f7674bf00) |
+| location-api | `44143637-79c4-402b-bc22-2ca34f016c45` | [Open](https://go.postman.co/workspace/44143637-79c4-402b-bc22-2ca34f016c45) |
+| notifications-api | `224581a5-6486-4140-8e6f-6bdb99f6948a` | [Open](https://go.postman.co/workspace/224581a5-6486-4140-8e6f-6bdb99f6948a) |
+| places-api | `5a6cbe9c-c963-4f25-9cf3-a46c571c0255` | [Open](https://go.postman.co/workspace/5a6cbe9c-c963-4f25-9cf3-a46c571c0255) |
+| safety-api | `dc732dd0-cbc1-432a-99a8-99e006902d40` | [Open](https://go.postman.co/workspace/dc732dd0-cbc1-432a-99a8-99e006902d40) |
+
 ## Next Steps
 - Create system environments in the Postman web UI and wire IDs into `system-env-map-json` for environment linking
-- Run against Life360's full SwaggerHub catalog (all APIs) using Spec-Migration-Normalize
 - Configure Life360-specific Spectral rules for their API standards
 - Set up Postman monitors with cron schedule for production smoke tests
 - Evaluate `enable-insights: true` for K8s-deployed services
 - Migrate to pinned action versions (e.g. `@v0.12.0`) once stable
 - Automate access token refresh when GA mechanism is available
+- Build `tools/migrate.sh` local CLI orchestrator to wrap the full pipeline (normalizer → repo create → secrets → push → trigger)
