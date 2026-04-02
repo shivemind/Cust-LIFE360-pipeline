@@ -51,7 +51,7 @@
   - Supports per-API environments, runtime URLs, and optional SwaggerHub URL overrides
 - **Auto-generated CI** — repo-sync creates `postman-ci-<name>.yml` per API for ongoing smoke and contract testing
 
-### Sprint 3 — Private API Network Promotion (current)
+### Sprint 3 — Private API Network Promotion
 - **Promotion workflow** (`.github/workflows/promote-to-private-network.yml`)
   - Triggers automatically after onboarding or CI pipelines succeed on `main`
   - Quality gate checks: verifies most recent onboard + CI runs passed before promoting
@@ -60,6 +60,39 @@
   - Supports `workflow_dispatch` with single-API filter and force-promote override
   - Folder name and description configurable via `private_network` block in `life360-api-manifest.json`
 - Uses Postman Private API Network REST API: `GET /network/private`, `POST /network/private`
+- **Companion action** — `PrivateAPI-promote-auto` packaged as a standalone reusable GitHub Action
+
+### Sprint 4 — Bifrost Integration & CI Pipeline Fix (current)
+- **Postman Access Token** — configured `POSTMAN_ACCESS_TOKEN` as a GitHub secret (session token extracted via `postman login` CLI → `~/.postman/postmanrc`)
+  - Enables Bifrost workspace-to-repo linking in the API Catalog
+  - Enables spec-to-collection cloud linking and sync
+  - Enables system environment association
+  - Token is session-scoped and requires periodic manual refresh (open-alpha limitation)
+- **CI workflow fix** (`.github/workflows/postman-ci-circles-api.yml`)
+  - Auto-generated file had escaped `\n` characters instead of real newlines — GitHub Actions rejected it as invalid YAML
+  - Reformatted to proper multi-line YAML
+  - Fixed `if: ${{ secrets.POSTMAN_SSL_CLIENT_CERT_B64 != '' }}` — GitHub Actions does not allow `secrets` context in step `if` conditions; moved SSL cert check into the run block as a shell conditional
+  - Smoke tests now execute successfully (403s expected without Life360 auth credentials)
+- **System environment linking** — `system-env-map-json` in the onboard workflow is currently empty; requires system environments to be created in the Postman web UI (API Catalog > System Environments) before they can be mapped. No public API exists to create them programmatically.
+- **Enterprise sandbox** — pipeline validated against `sync-annual-enterprise-202603` plan, user `admin-sandbox-ca484575` (userId 53591924)
+
+### Companion Repo: Spec-Migration-Normalize
+- Packaged as a standalone composite GitHub Action (`DansFolder/Spec-Migration-Normalize`)
+- **Sprint 1**: Ingests SwaggerHub exports (JSON/YAML, Swagger 2.0/OpenAPI 3.x), normalizes to clean OpenAPI 3.x YAML, scaffolds per-service repos (one repo, one service, one workspace)
+- **Sprint 2**: Expanded to support 11 API spec formats:
+  - **Auto-convert to OpenAPI 3.x**: Swagger 2.0 (swagger2openapi), RAML 0.8 (api-spec-converter), API Blueprint (api-spec-converter), WADL (api-spec-converter), Postman Collection v2.1 (postman-to-openapi)
+  - **Passthrough with import guidance**: GraphQL SDL, Protobuf, AsyncAPI (Postman-native), WSDL, HAR (manual/UI import)
+- Designed as the first stage of any API-platform-to-Postman migration
+
+### Companion Repo: PrivateAPI-promote-auto
+- Standalone composite GitHub Action for quality-gated Private API Network promotion
+- Reusable across customers; takes `postman-api-key`, `workspace-id`, `folder-name` as inputs
+
+## Verified Pipeline Flow (March 31 2026)
+1. `onboard-apis.yml` → discover manifest → bootstrap workspace + Spec Hub + collections + governance → repo-sync (environments, mock, monitor, CI workflow, Bifrost link) → commit & push
+2. `postman-ci-circles-api.yml` → install Postman CLI → resolve resource IDs from `.postman/resources.yaml` → run smoke tests → run contract tests → upload results to Postman Cloud
+3. `promote-to-private-network.yml` → quality gate (check onboard + CI success) → create PAN folder → add workspace
+4. Spec Hub confirmed as source of truth: spec loaded first, then all collections derived from the spec
 
 ## Value Unlocked
 - **Single pane of glass**: every Life360 API visible in Postman v12 API Catalog
@@ -69,22 +102,29 @@
 - **Private API Network as quality gate**: only APIs passing lint, smoke, and contract tests are promoted to the team's Private API Network — discoverable by all team members
 - **Workspace-repo linking**: Bifrost connects each Postman workspace to the GitHub repo
 - **Collection v3 export**: collections synced back to repo as multi-file YAML for version control
+- **Multi-format ingestion**: customers migrating from any API platform (SwaggerHub, MuleSoft/RAML, Apiary, etc.) can use Spec-Migration-Normalize to standardize before onboarding
 
 ## Reusable Pattern
 - Manifest-driven API onboarding (adaptable to any org migrating from SwaggerHub or any OpenAPI registry)
 - Matrix workflow pattern for parallel per-API GitHub Actions execution
 - Spectral + Postman governance dual-layer enforcement
 - postman-cs action suite integration template for enterprise customers
+- Three companion GitHub Actions packaged for reuse: onboarding (postman-cs), PAN promotion, spec ingestion/normalization
 
 ## Product Gaps / Risks
 - `postman-access-token` requires manual browser login and periodic refresh (open-alpha limitation)
+- System environments can only be created through the Postman web UI — no public API exists
+- Governance group assignment returns 404 on some enterprise instances (Bifrost endpoint `configure/workspace-groups` not found)
 - Private repos need a hosted spec URL since raw.githubusercontent.com may not be reachable by bootstrap fetch
-- No Swagger 2.0 → OpenAPI 3.0 auto-conversion (specs must already be OAS 3.x)
+- `postman-repo-sync-action` generates CI workflow files with escaped newlines instead of real newlines (requires manual fix)
 - Rate limits on Postman API may affect large catalog migrations (no backoff in actions yet)
+- RAML 1.0 not supported by `api-spec-converter` (only RAML 0.8); `postman-to-openapi` requires Collection v2.1
 
 ## Next Steps
-- Run against Life360's full SwaggerHub catalog (all APIs)
+- Create system environments in the Postman web UI and wire IDs into `system-env-map-json` for environment linking
+- Run against Life360's full SwaggerHub catalog (all APIs) using Spec-Migration-Normalize
 - Configure Life360-specific Spectral rules for their API standards
 - Set up Postman monitors with cron schedule for production smoke tests
 - Evaluate `enable-insights: true` for K8s-deployed services
 - Migrate to pinned action versions (e.g. `@v0.12.0`) once stable
+- Automate access token refresh when GA mechanism is available
