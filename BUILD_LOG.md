@@ -161,6 +161,20 @@
 | places-api | `5a6cbe9c-c963-4f25-9cf3-a46c571c0255` | [Open](https://go.postman.co/workspace/5a6cbe9c-c963-4f25-9cf3-a46c571c0255) |
 | safety-api | `dc732dd0-cbc1-432a-99a8-99e006902d40` | [Open](https://go.postman.co/workspace/dc732dd0-cbc1-432a-99a8-99e006902d40) |
 
+## Verified End-to-End Run (April 2 2026 — 5 Life360 APIs)
+
+| Step | Input | Output | Status |
+|------|-------|--------|--------|
+| SwaggerHub export → Desktop | 5 OAS 3.0.3 YAML files | `~/Desktop/life360-swaggerhub-exports/` | Done |
+| Spec-Migration-Normalize | 5 YAML specs | 5 scaffolded repo dirs in `~/Desktop/life360-scaffolded-repos/` | Done |
+| `gh repo create` × 5 | Scaffolded dirs | 5 GitHub repos under `danielshively-source/` | Done |
+| Secrets provisioned | `POSTMAN_API_KEY` + `GH_FALLBACK_TOKEN` | Set on all 5 repos | Done |
+| `onboard-apis.yml` × 5 | Push to main triggers | 5 workspaces, 5 specs, 15 collections, 10 environments | Done |
+| CI workflow generation | repo-sync-action | `postman-ci-*.yml` committed to each repo | Done |
+| Idempotency fixes | 3 duplication vectors | `paths-ignore` + workspace name fallback + CI path filter | Done |
+| Orphan workspace cleanup | 5 duplicates | Deleted via Postman API | Done |
+| QA verification | All 5 repos + workspaces | 100% pass — unique workspaces, correct assets, no duplicates | Done |
+
 ## Next Steps
 - Create system environments in the Postman web UI and wire IDs into `system-env-map-json` for environment linking
 - Configure Life360-specific Spectral rules for their API standards
@@ -169,3 +183,4 @@
 - Migrate to pinned action versions (e.g. `@v0.12.0`) once stable
 - Automate access token refresh when GA mechanism is available
 - Build `tools/migrate.sh` local CLI orchestrator to wrap the full pipeline (normalizer → repo create → secrets → push → trigger)
+- Push to `postman-cs` remote (blocked on `shivemind` GitHub token re-auth)
