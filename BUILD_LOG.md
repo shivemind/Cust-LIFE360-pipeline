@@ -106,6 +106,12 @@
 - **Issue found & fixed**: first onboard run failed at git push because default `GITHUB_TOKEN` lacks `workflows` permission to create `.github/workflows/` files. Fix: set `GH_FALLBACK_TOKEN` (PAT with `workflow` scope) on each repo, then re-triggered. Second run succeeded and committed all artifacts.
 - **Orphan cleanup**: first run created workspaces but couldn't commit `.postman/resources.yaml`; second run created new workspaces. Deleted 5 orphaned workspaces via API.
 - **Enterprise PMAK rotated** — updated `POSTMAN_API_KEY` secret and local `test_config/config.json`
+- **Idempotency hardening** (3 duplication vectors fixed):
+  1. **onboard-apis.yml** — added `paths-ignore` for `.postman/**`, `postman/**`, `.github/workflows/postman-ci-*` to prevent re-triggering on repo-sync artifact commits
+  2. **Resolve step workspace name fallback** — when `.postman/resources.yaml` is missing (first run or failed push), the workflow now searches the Postman API for an existing workspace matching `[DOMAIN_CODE] api-name` before creating a new one; also resolves existing collections by name from the workspace
+  3. **postman-ci-*.yml** — auto-generated CI workflows had `on.push` with no path filter (every push to main triggered CI + cascading promote); fixed to add `paths-ignore` for sync artifacts, also fixed escaped `\n` newlines and `secrets` in `if` condition
+  - All fixes pushed to all 5 per-service repos with `[skip ci]` to prevent cascade
+  - Template updated in `Spec-Migration-Normalize/templates/onboard-apis.yml.tpl` for future scaffolds
 
 ### Companion Repo: PrivateAPI-promote-auto
 - Standalone composite GitHub Action for quality-gated Private API Network promotion
@@ -141,7 +147,7 @@
 - System environments can only be created through the Postman web UI — no public API exists
 - Governance group assignment returns 404 on some enterprise instances (Bifrost endpoint `configure/workspace-groups` not found)
 - Private repos need a hosted spec URL since raw.githubusercontent.com may not be reachable by bootstrap fetch
-- `postman-repo-sync-action` generates CI workflow files with escaped newlines instead of real newlines (requires manual fix)
+- `postman-repo-sync-action` generates CI workflow files with escaped newlines instead of real newlines (requires manual fix); also generates `on.push` with no path filter causing cascade triggers
 - Rate limits on Postman API may affect large catalog migrations (no backoff in actions yet)
 - RAML 1.0 not supported by `api-spec-converter` (only RAML 0.8); `postman-to-openapi` requires Collection v2.1
 
