@@ -374,6 +374,48 @@ If specs are still hosted on SwaggerHub during migration, set `spec_url` in the 
 
 The bootstrap action fetches the spec from `spec_url` and uploads it to Spec Hub. The local copy in `swaggerhub_apis/` is used for PR-time linting only.
 
+## Push-to-Main Gating
+
+Once branch protection is enabled on a per-service repo, any push or PR targeting `main` blocks until these status checks pass:
+
+| Check | Source workflow | What it enforces |
+|---|---|---|
+| `Validate manifest` | `api-governance.yml` | `api-manifest.json` schema and required fields |
+| `Lint OpenAPI specs` | `api-governance.yml` | Spectral lint with `fail-severity warn` |
+| `Validate OpenAPI structure` | `api-governance.yml` | swagger-cli structural validation |
+| `Smoke` | `postman-ci-<service>.yml` | Postman CLI smoke tests |
+| `Contract` | `postman-ci-<service>.yml` | Postman CLI contract tests |
+
+`onboard-apis.yml` runs separately on push to commit Postman artifacts back; gating is on the test outcomes, not the onboarding step itself. To enable on a repo:
+
+```bash
+gh api -X PUT "repos/<owner>/<repo>/branches/main/protection" --input branch-protection.json
+```
+
+with `branch-protection.json` containing `required_status_checks.contexts` matching the table above (`strict: true`, force pushes + deletions blocked).
+
+## CSE Pipeline Validator (Internal)
+
+Read-only validator at `~/Desktop/DansFolder/Internal-CSE-Pipeline-Validation/` (Node CLI + GitHub Action) that checks a per-service repo against the CSE pipeline contract.
+
+```bash
+node ~/Desktop/DansFolder/Internal-CSE-Pipeline-Validation/bin/cse-validate.cjs \
+  --repo-root /path/to/service-repo \
+  --config /path/to/service-repo/.cse-validation.json \
+  --mode full
+```
+
+Or as a GitHub Action step in any service repo:
+
+```yaml
+- uses: shivemind/Internal-CSE-Pipeline-Validation@main
+  with:
+    config-path: .cse-validation.json
+    mode: ${{ github.event_name == 'pull_request' && 'lint' || 'full' }}
+```
+
+Lint mode runs static repo + workflow checks (PR-safe). Full mode adds drift, smoke/contract/catalog evidence, required env-var enforcement, and optional live GitHub branch-protection + Postman API parity checks.
+
 ## Postman Workspaces (Life360 — April 2026)
 
 | Service | Workspace | URL |
@@ -383,6 +425,12 @@ The bootstrap action fetches the spec from `spec_url` and uploads it to Spec Hub
 | notifications-api | `[L360] notifications-api` | [Open](https://go.postman.co/workspace/224581a5-6486-4140-8e6f-6bdb99f6948a) |
 | places-api | `[L360] places-api` | [Open](https://go.postman.co/workspace/5a6cbe9c-c963-4f25-9cf3-a46c571c0255) |
 | safety-api | `[L360] safety-api` | [Open](https://go.postman.co/workspace/dc732dd0-cbc1-432a-99a8-99e006902d40) |
+
+## Postman Workspaces (Winter Trinity — April 30 2026 sample run)
+
+| Service | Workspace | URL |
+|---------|-----------|-----|
+| petstore-api | `[WT] petstore-api` | [Open](https://go.postman.co/workspace/eed0449c-6c86-4c0c-b23f-338f6c510c6b) |
 
 ## Legacy Manual Script
 
