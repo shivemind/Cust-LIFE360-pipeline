@@ -1,10 +1,18 @@
 type: http
-name: Run infrastructure connectivity checks
-url: '{{baseUrl}}/infra-check'
-method: GET
+name: Echo a message back to the caller
+url: '{{baseUrl}}/jeff-test/echo'
+method: POST
 headers:
+  - key: Content-Type
+    value: application/json
   - key: Accept
     value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "message": "hello world"
+    }
 scripts:
   - type: afterResponse
     code:
@@ -74,10 +82,23 @@ examples:
         type: json
         content: |-
           {
-            "overall_status": "fail",
-            "timestamp": "2026-05-05T12:00:00Z"
+            "message": "hello world"
           }
       headers:
         - key: Content-Type
           value: application/json
-    name: Check run completed.
+    name: Echoed message.
+  - response:
+      statusCode: 400
+      statusText: Bad Request
+      body:
+        type: json
+        content: |-
+          {
+            "code": "INTERNAL_ERROR",
+            "message": "Something went wrong."
+          }
+      headers:
+        - key: Content-Type
+          value: application/json
+    name: Invalid request body.
