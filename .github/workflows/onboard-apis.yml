@@ -216,6 +216,31 @@ jobs:
               elif "[Contract]" in path:
                   col_paths_by_label["contract"] = path; col_uids_by_label["contract"] = uid
 
+          # ---------- name-based collection discovery ----------
+          # If we have a workspace but no collection UID on disk for one of
+          # the standard labels, look it up by name in the workspace before
+          # the action runs.  Without this, the action will happily create
+          # a SECOND collection with the same name on every re-run because
+          # it does not name-dedupe assets inside a workspace.
+          if ws_id and api_key:
+              try:
+                  resp = pm_request("GET", "/collections", f"workspace={ws_id}")
+                  cols_in_ws = resp.get("collections", [])
+                  for label in ("baseline", "smoke", "contract"):
+                      if col_uids_by_label[label]:
+                          continue
+                      target = f"[{label.capitalize()}] {api_name}"
+                      for c in cols_in_ws:
+                          if c.get("name") == target:
+                              path = f"../postman/collections/{target}"
+                              col_uids_by_label[label] = c["uid"]
+                              col_paths_by_label[label] = path
+                              surviving_collections[path] = c["uid"]
+                              print(f"  matched existing collection by name '{target}' (uid={c['uid']})")
+                              break
+              except Exception as e:
+                  print(f"  Warning: collection name lookup failed: {e}")
+
           # ---------- environments (the 400/404 source) ----------
           cloud_environments = ((state.get("cloudResources") or {}).get("environments")) or {}
           surviving_environments = {}
@@ -226,6 +251,35 @@ jobs:
                   print(f"  environment {uid} ({path}) no longer exists — dropping")
                   continue
               surviving_environments[path] = uid
+
+          # ---------- name-based environment discovery ----------
+          # Same idempotency layer as collections.  Without it, every
+          # re-run creates a fresh "<api> - <env>" environment in the
+          # workspace because the action does not dedupe by name.
+          if ws_id and api_key:
+              # We only know the env names from the manifest; pull them in.
+              try:
+                  with open("life360-api-manifest.json") as f:
+                      manifest = json.load(f)
+                  env_names = []
+                  for entry in manifest.get("apis", []):
+                      if entry.get("name") == api_name:
+                          env_names = entry.get("environments", []) or []
+                          break
+                  resp = pm_request("GET", "/environments", f"workspace={ws_id}")
+                  envs_in_ws = resp.get("environments", [])
+                  for env_name in env_names:
+                      target = f"{api_name} - {env_name}"
+                      path = f"../postman/environments/{env_name}.postman_environment.json"
+                      if path in surviving_environments:
+                          continue
+                      for e in envs_in_ws:
+                          if e.get("name") == target:
+                              surviving_environments[path] = e["uid"]
+                              print(f"  matched existing environment by name '{target}' (uid={e['uid']})")
+                              break
+              except Exception as e:
+                  print(f"  Warning: environment name lookup failed: {e}")
 
           # ---------- spec (look up by name in the workspace if we have one) ----------
           spec_id = ""
