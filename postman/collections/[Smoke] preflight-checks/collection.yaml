@@ -1,0 +1,12 @@
+$schema: https://schema.postman.com/json/draft-2020-12/collection/v3.0.0/
+type: collection
+name: '[Smoke] preflight-checks'
+description: Minimal baseline spec for onboarding-pipeline testing. Not intended to match the real service.
+id: dd1d0cc3-e36e-41f9-9c5d-0c466881afd6
+variables:
+  - key: baseUrl
+    value: http://localhost:8999
+    type: any
+items:
+  - ref: ./infra-check/folder.yaml
+  - ref: ./00 - Resolve Secrets.request.yaml

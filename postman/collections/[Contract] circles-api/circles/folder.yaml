@@ -1,5 +1,0 @@
-type: folder
-name: circles
-items:
-  - ref: ./{circleId}/folder.yaml
-  - ref: ./List circles.request.yaml

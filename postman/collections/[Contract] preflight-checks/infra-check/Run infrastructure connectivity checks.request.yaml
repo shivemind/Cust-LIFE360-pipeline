@@ -1,6 +1,6 @@
 type: http
-name: List circles
-url: '{{baseUrl}}/circles'
+name: Run infrastructure connectivity checks
+url: '{{baseUrl}}/infra-check'
 method: GET
 headers:
   - key: Accept
@@ -73,47 +73,11 @@ examples:
       body:
         type: json
         content: |-
-          [
-            {
-              "id": "string",
-              "name": "string",
-              "memberCount": 1993
-            },
-            {
-              "id": "string",
-              "name": "string",
-              "memberCount": 8044
-            }
-          ]
-      headers:
-        - key: Content-Type
-          value: application/json
-    name: A list of circles
-  - response:
-      statusCode: 401
-      statusText: Unauthorized
-      body:
-        type: json
-        content: |-
           {
-            "code": 3337,
-            "message": "string"
+            "overall_status": "fail",
+            "timestamp": "2026-05-05T12:00:00Z"
           }
       headers:
         - key: Content-Type
           value: application/json
-    name: Unauthorized
-  - response:
-      statusCode: 500
-      statusText: Internal Server Error
-      body:
-        type: json
-        content: |-
-          {
-            "code": 3337,
-            "message": "string"
-          }
-      headers:
-        - key: Content-Type
-          value: application/json
-    name: Internal server error
+    name: Check run completed.
