@@ -1,4 +1,5 @@
-workspace: {}
+workspace:
+  id: efb15d25-f47b-4dc3-b85c-09aa73d0f88d
 localResources:
   collections: []
   environments: []
