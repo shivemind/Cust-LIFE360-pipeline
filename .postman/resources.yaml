@@ -1,0 +1,22 @@
+workspace:
+  id: 3fd92105-5ba8-4234-bf62-a9b5d6995d9f
+localResources:
+  collections:
+    - ../postman/collections/[Baseline] circles-api
+    - ../postman/collections/[Smoke] circles-api
+    - ../postman/collections/[Contract] circles-api
+  environments:
+    - ../postman/environments/prod.postman_environment.json
+  specs:
+    - ../swaggerhub_apis/life360/circles-api-1.0.0.yaml
+    - ../swaggerhub_apis/life360/jeff-test-service-1.0.0.yaml
+    - ../swaggerhub_apis/life360/preflight-checks-1.0.0.yaml
+cloudResources:
+  collections:
+    ../postman/collections/[Baseline] circles-api: 52400725-c43d5c24-eb6a-4111-8b5e-d8b9d4719c3c
+    ../postman/collections/[Smoke] circles-api: 52400725-5a65b443-296d-4cec-becc-36e5f3798676
+    ../postman/collections/[Contract] circles-api: 52400725-2e360ad4-9be5-47ea-83d8-e8f66f31ecf8
+  environments:
+    ../postman/environments/prod.postman_environment.json: 52400725-e874c4aa-37f4-4c54-884b-f90012ad01b7
+  specs:
+    ../swaggerhub_apis/life360/circles-api-1.0.0.yaml: 8c5a5726-c320-4073-aed5-90d4c229d40c

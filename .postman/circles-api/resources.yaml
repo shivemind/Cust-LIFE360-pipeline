@@ -1,5 +1,4 @@
-workspace:
-  id: 88f1df20-6e5c-414a-b1f4-4b82aa1893d1
+workspace: {}
 localResources:
   collections:
   - ../postman/collections/[Baseline] circles-api
@@ -10,9 +9,5 @@ localResources:
   specs:
   - ../swaggerhub_apis/life360/circles-api-1.0.0.yaml
 cloudResources:
-  collections:
-    ../postman/collections/[Baseline] circles-api: 53591924-948d84c2-727b-4c3a-ba19-45d84fa25ea2
-    ../postman/collections/[Smoke] circles-api: 53591924-709229ed-26df-4ad4-b1df-9fe4043447b1
-    ../postman/collections/[Contract] circles-api: 53591924-1bf72a41-65a0-4204-a21d-cfb009d78381
-  environments:
-    ../postman/environments/prod.postman_environment.json: 53591924-67fb3885-6311-474c-b410-297389c12042
+  collections: {}
+  environments: {}

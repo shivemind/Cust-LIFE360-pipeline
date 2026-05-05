@@ -1,0 +1,12 @@
+$schema: https://schema.postman.com/json/draft-2020-12/collection/v3.0.0/
+type: collection
+name: '[Smoke] circles-api'
+description: Manage Life360 circles and memberships
+id: 5a65b443-296d-4cec-becc-36e5f3798676
+variables:
+  - key: baseUrl
+    value: https://api.life360.com/v3
+    type: any
+items:
+  - ref: ./circles/folder.yaml
+  - ref: ./00 - Resolve Secrets.request.yaml

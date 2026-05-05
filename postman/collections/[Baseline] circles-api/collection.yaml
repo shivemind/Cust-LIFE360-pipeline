@@ -1,0 +1,11 @@
+$schema: https://schema.postman.com/json/draft-2020-12/collection/v3.0.0/
+type: collection
+name: '[Baseline] circles-api'
+description: Manage Life360 circles and memberships
+id: c43d5c24-eb6a-4111-8b5e-d8b9d4719c3c
+variables:
+  - key: baseUrl
+    value: https://api.life360.com/v3
+    type: any
+items:
+  - ref: ./circles/folder.yaml
