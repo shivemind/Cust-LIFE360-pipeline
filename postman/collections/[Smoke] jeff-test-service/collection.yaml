@@ -1,0 +1,17 @@
+$schema: https://schema.postman.com/json/draft-2020-12/collection/v3.0.0/
+type: collection
+name: '[Smoke] jeff-test-service'
+description: |-
+  Minimal self-contained spec used to validate the Postman onboarding pipeline.
+
+  Contact Support:
+   Name: Jeff Hall
+   Email: jhall@life360.com
+id: a1d5cd11-49bd-4141-b370-2110293135b1
+variables:
+  - key: baseUrl
+    value: https://api.life360.com/v3
+    type: any
+items:
+  - ref: ./jeff-test/folder.yaml
+  - ref: ./00 - Resolve Secrets.request.yaml

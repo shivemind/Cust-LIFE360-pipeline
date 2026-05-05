@@ -1,0 +1,43 @@
+type: http
+name: Echo a message back to the caller
+url: '{{baseUrl}}/jeff-test/echo'
+method: POST
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Accept
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "message": "hello world"
+    }
+examples:
+  - response:
+      statusCode: 200
+      statusText: OK
+      body:
+        type: json
+        content: |-
+          {
+            "message": "hello world"
+          }
+      headers:
+        - key: Content-Type
+          value: application/json
+    name: Echoed message.
+  - response:
+      statusCode: 400
+      statusText: Bad Request
+      body:
+        type: json
+        content: |-
+          {
+            "code": "INTERNAL_ERROR",
+            "message": "Something went wrong."
+          }
+      headers:
+        - key: Content-Type
+          value: application/json
+    name: Invalid request body.

@@ -1,4 +1,0 @@
-type: folder
-name: infra-check
-items:
-  - ref: ./Run infrastructure connectivity checks.request.yaml

@@ -5,5 +5,9 @@ localResources:
   environments: []
   specs: []
 cloudResources:
-  collections: {}
-  environments: {}
+  collections:
+    ../postman/collections/[Baseline] jeff-test-service: 52400725-df016041-56a6-4d44-a58c-569b6ffafe2a
+    ../postman/collections/[Smoke] jeff-test-service: 52400725-a1d5cd11-49bd-4141-b370-2110293135b1
+    ../postman/collections/[Contract] jeff-test-service: 52400725-0316c2a5-48d6-4e4f-bca1-a3305dcde2cf
+  environments:
+    ../postman/environments/prod.postman_environment.json: 52400725-1fbb0b9a-d5eb-4333-bf1b-56c0cb100230
