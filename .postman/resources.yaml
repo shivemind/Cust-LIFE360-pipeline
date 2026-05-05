@@ -1,10 +1,10 @@
 workspace:
-  id: efb15d25-f47b-4dc3-b85c-09aa73d0f88d
+  id: f6459e3e-fe14-41b5-bce4-912b6bc76fe4
 localResources:
   collections:
-    - ../postman/collections/[Baseline] preflight-checks
-    - ../postman/collections/[Smoke] preflight-checks
-    - ../postman/collections/[Contract] preflight-checks
+    - ../postman/collections/[Baseline] jeff-test-service
+    - ../postman/collections/[Smoke] jeff-test-service
+    - ../postman/collections/[Contract] jeff-test-service
   environments:
     - ../postman/environments/prod.postman_environment.json
   specs:
@@ -13,10 +13,10 @@ localResources:
     - ../swaggerhub_apis/life360/preflight-checks-1.0.0.yaml
 cloudResources:
   collections:
-    ../postman/collections/[Baseline] preflight-checks: 52400725-217f676a-2689-44c3-9668-3d6d0621b7bb
-    ../postman/collections/[Smoke] preflight-checks: 52400725-dd1d0cc3-e36e-41f9-9c5d-0c466881afd6
-    ../postman/collections/[Contract] preflight-checks: 52400725-656758ae-57b3-4799-b8e0-b28a7c8925cc
+    ../postman/collections/[Baseline] jeff-test-service: 52400725-df016041-56a6-4d44-a58c-569b6ffafe2a
+    ../postman/collections/[Smoke] jeff-test-service: 52400725-a1d5cd11-49bd-4141-b370-2110293135b1
+    ../postman/collections/[Contract] jeff-test-service: 52400725-0316c2a5-48d6-4e4f-bca1-a3305dcde2cf
   environments:
-    ../postman/environments/prod.postman_environment.json: 52400725-5bd1f75c-8836-4d69-91eb-e90b90a2b181
+    ../postman/environments/prod.postman_environment.json: 52400725-1fbb0b9a-d5eb-4333-bf1b-56c0cb100230
   specs:
-    ../swaggerhub_apis/life360/preflight-checks-1.0.0.yaml: f0eae3fa-965b-47bc-ae3c-8a23f9846616
+    ../swaggerhub_apis/life360/jeff-test-service-1.0.0.yaml: 08eead4a-c90c-4ab3-bd5f-982adccc1bc7

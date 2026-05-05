@@ -1,0 +1,4 @@
+type: folder
+name: echo
+items:
+  - ref: ./Echo a message back to the caller.request.yaml
