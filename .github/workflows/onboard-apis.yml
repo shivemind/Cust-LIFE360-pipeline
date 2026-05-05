@@ -79,10 +79,20 @@ jobs:
       matrix:
         api: ${{ fromJSON(needs.discover.outputs.matrix) }}
     steps:
+      # Always pin to the current tip of `main`, not the workflow's trigger
+      # SHA.  Otherwise each matrix iteration sees the original SHA and the
+      # bootstrap action's auto-push gets rejected non-fast-forward after
+      # the previous iteration's persist commit lands.
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GH_FALLBACK_TOKEN }}
+          ref: ${{ github.ref_name }}
           fetch-depth: 0
+
+      - name: Sync to latest main
+        run: |
+          git fetch origin "${{ github.ref_name }}"
+          git reset --hard "origin/${{ github.ref_name }}"
 
       - name: Configure git identity
         run: |
