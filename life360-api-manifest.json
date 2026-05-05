@@ -2,6 +2,10 @@
   "organization": "Life360",
   "domain": "life360-platform",
   "domain_code": "L360",
+  "insights": {
+    "enabled": true,
+    "cluster_name": "life360-demo"
+  },
   "apis": [
     {
       "name": "circles-api",

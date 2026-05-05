@@ -260,6 +260,35 @@ Each manifest entry under `environments` becomes a workspace environment named `
 
 When a developer opens the spec in **Spec Hub** and selects this env, every request resolves `{{baseUrl}}` against that URL — that's the prod-to-prod (or staging-to-staging) hookup. The `onboard-apis.yml` workflow has a post-onboard verification step that fails the run if the env's `baseUrl` drifts from the manifest's `runtime_urls.<env>`, so this stays correct on every push.
 
+### API Catalog system-environment hookup (Postman Insights)
+
+To take the linkage one level deeper and have each workspace environment hooked to the **API Catalog system environment** for the corresponding runtime cluster, set `insights.enabled: true` and `insights.cluster_name` in the manifest:
+
+```json
+{
+  "insights": {
+    "enabled": true,
+    "cluster_name": "life360-prod"
+  },
+  ...
+}
+```
+
+When this is set, the onboarding workflow will:
+
+1. Query Bifrost's `/api/v1/onboarding/discovered-services` for services discovered by the Postman Insights DaemonSet running in the named cluster.
+2. Match each manifest API's name (e.g. `circles-api`) against the discovered service suffix (e.g. `life360/circles-api`).
+3. Pull the `systemEnvironmentId` off the matched record and build a `system-env-map-json` of `{ "<env>": "<system_env_id>", ... }` for every env in the API's `environments` list.
+4. Pass `enable-insights: true`, `system-env-map-json`, and `cluster-name` to the onboarding action chain. The repo-sync action then calls `/api/internal/system-envs/associate` to link each workspace env to its system environment.
+
+**Prerequisites for this layer to actually fire:**
+
+- The [Postman Insights DaemonSet agent](https://learning.postman.com/docs/insights/get-started/kubernetes/daemonset) must be running in the customer's Kubernetes cluster (with `--discovery-mode` and `POSTMAN_INSIGHTS_CLUSTER_NAME=<cluster-name from manifest>`).
+- Each service the manifest references must be deployed in that cluster, observable by the agent (i.e. receiving real HTTP traffic).
+- An Insights project must be initialized for the team (one-time UI step in Postman: API Catalog → Integrated Services → set up project / acknowledge first discovered service). This is what populates `systemEnvironmentId` on every subsequent discovered service for the cluster.
+
+**Graceful skip:** if any prerequisite is missing — agent not deployed, no traffic yet, services discovered but not yet integrated, no `POSTMAN_ACCESS_TOKEN`, or `insights.enabled: false` — the resolver step prints a `::warning::` and the onboarding action runs in normal Spec-Hub-only mode. The next push will pick up the linkage automatically once the prerequisites are in place. No code change needed when the cluster comes online.
+
 ### 4. Push and watch
 
 ```bash

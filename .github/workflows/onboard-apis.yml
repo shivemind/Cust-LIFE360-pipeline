@@ -38,6 +38,8 @@ jobs:
       domain: ${{ steps.parse.outputs.domain }}
       domain_code: ${{ steps.parse.outputs.domain_code }}
       governance: ${{ steps.parse.outputs.governance }}
+      insights_enabled: ${{ steps.parse.outputs.insights_enabled }}
+      insights_cluster: ${{ steps.parse.outputs.insights_cluster }}
     steps:
       - uses: actions/checkout@v4
 
@@ -54,6 +56,8 @@ jobs:
           echo "domain=$(jq -r '.domain' life360-api-manifest.json)" >> "$GITHUB_OUTPUT"
           echo "domain_code=$(jq -r '.domain_code' life360-api-manifest.json)" >> "$GITHUB_OUTPUT"
           echo "governance=$(jq -c '.governance_mapping // {}' life360-api-manifest.json)" >> "$GITHUB_OUTPUT"
+          echo "insights_enabled=$(jq -r '(.insights.enabled // false) | tostring' life360-api-manifest.json)" >> "$GITHUB_OUTPUT"
+          echo "insights_cluster=$(jq -r '.insights.cluster_name // ""' life360-api-manifest.json)" >> "$GITHUB_OUTPUT"
 
   # ---------------------------------------------------------------------------
   # 2. For each API in the matrix, run the full onboarding pipeline.
@@ -385,6 +389,123 @@ jobs:
             cp -R "postman/${API}/globals/." postman/globals/
           fi
 
+      # -------------------------------------------------------------------
+      # Resolve Postman Insights system_env_id for this API (when enabled).
+      #
+      # When `insights.enabled: true` is set in the manifest, query Bifrost's
+      # api-catalog/discovered-services list and find a record whose name
+      # matches "<namespace>/<api-name>" (case-insensitive) AND whose tags or
+      # status indicate it belongs to the configured cluster.  If a record
+      # with a populated systemEnvironmentId is found, build a system-env-map
+      # of `{ "<env>": "<system_env_id>" }` for every env in the API's
+      # `environments` list and pass it through to the onboarding chain so
+      # repo-sync can call /api/internal/system-envs/associate.
+      #
+      # Graceful no-discovery: if `insights.enabled: false`, or no matching
+      # record exists, or the matching record has no systemEnvironmentId
+      # (the agent hasn't been ack'd yet), the resolver outputs empty values
+      # and the onboarding action runs in normal Spec-Hub-only mode.  The
+      # next push picks the linkage up automatically once the agent has
+      # acknowledged the service in the Postman UI / API Catalog.
+      # -------------------------------------------------------------------
+      - name: Resolve Insights system_env_id for this API
+        id: insights
+        env:
+          POSTMAN_ACCESS_TOKEN: ${{ secrets.POSTMAN_ACCESS_TOKEN }}
+          INSIGHTS_ENABLED: ${{ needs.discover.outputs.insights_enabled }}
+          INSIGHTS_CLUSTER: ${{ needs.discover.outputs.insights_cluster }}
+          API_NAME: ${{ matrix.api.name }}
+          ENVIRONMENTS_JSON: ${{ toJSON(matrix.api.environments) }}
+        run: |
+          python3 << 'PYEOF'
+          import json, os, urllib.request, urllib.error, sys
+
+          out_path = os.environ["GITHUB_OUTPUT"]
+          enabled  = os.environ.get("INSIGHTS_ENABLED", "false").lower() == "true"
+          cluster  = os.environ.get("INSIGHTS_CLUSTER", "").strip()
+          api_name = os.environ["API_NAME"]
+          envs     = json.loads(os.environ["ENVIRONMENTS_JSON"])
+          access   = os.environ.get("POSTMAN_ACCESS_TOKEN", "")
+
+          def emit(enabled_flag, system_env_map_json):
+              with open(out_path, "a") as f:
+                  f.write(f"enable-insights={'true' if enabled_flag else 'false'}\n")
+                  f.write(f"system-env-map-json={system_env_map_json}\n")
+                  f.write(f"cluster-name={cluster}\n")
+
+          if not enabled:
+              print("Insights not enabled in manifest — skipping system_env resolution")
+              emit(False, "{}")
+              sys.exit(0)
+
+          if not access:
+              print("::warning::insights.enabled=true but POSTMAN_ACCESS_TOKEN is not set; skipping")
+              emit(False, "{}")
+              sys.exit(0)
+
+          # Bifrost proxy call to api-catalog/discovered-services
+          payload = {
+              "service": "api-catalog",
+              "method":  "GET",
+              "path":    "/api/v1/onboarding/discovered-services?page_size=200",
+          }
+          req = urllib.request.Request(
+              "https://bifrost-premium-https-v4.gw.postman.com/ws/proxy",
+              data=json.dumps(payload).encode(),
+              method="POST",
+              headers={
+                  "x-access-token": access,
+                  "Content-Type":   "application/json",
+              },
+          )
+          try:
+              with urllib.request.urlopen(req, timeout=20) as resp:
+                  data = json.loads(resp.read())
+          except urllib.error.HTTPError as e:
+              print(f"::warning::discovered-services lookup failed ({e.code}); skipping insights linkage")
+              emit(False, "{}")
+              sys.exit(0)
+          except Exception as e:
+              print(f"::warning::discovered-services lookup error ({e}); skipping insights linkage")
+              emit(False, "{}")
+              sys.exit(0)
+
+          items = data.get("items", [])
+          print(f"Total discovered services in team: {len(items)}")
+
+          # Match by service-name suffix.  Discovered names are "<namespace>/<service>"
+          # (e.g. "life360/circles-api").  We match on the suffix.
+          match = None
+          name_lower = api_name.lower()
+          for it in items:
+              n = (it.get("name") or "").lower()
+              suffix = n.split("/")[-1] if "/" in n else n
+              if suffix == name_lower:
+                  if (it.get("systemEnvironmentId") or "").strip():
+                      match = it
+                      break
+                  if match is None:
+                      match = it  # remember first name match in case nothing has sysEnv
+
+          if match is None:
+              print(f"::warning::No discovered service found matching '{api_name}'. Insights agent may not have observed traffic yet, or the service was renamed. Skipping insights linkage for this run.")
+              emit(False, "{}")
+              sys.exit(0)
+
+          sys_env_id = match.get("systemEnvironmentId") or ""
+          if not sys_env_id:
+              print(f"::warning::Found discovered service '{match.get('name')}' but it has no systemEnvironmentId yet. The Insights backend hasn't completed onboarding/integration for it. Skipping insights linkage; will retry on next run.")
+              emit(False, "{}")
+              sys.exit(0)
+
+          # Build env→system_env_id map.  All envs in this API map to the
+          # same cluster's system env (discovery is per-cluster).
+          mapping = {env: sys_env_id for env in envs}
+          print(f"Resolved Insights system_env_id={sys_env_id} for {api_name}")
+          print(f"system-env-map-json: {mapping}")
+          emit(True, json.dumps(mapping))
+          PYEOF
+
       - name: Onboard to Postman v12 API Catalog
         # Pinned to shivemind fork. Internal references chain to:
         #   shivemind/postman-bootstrap-action@ed7ddb3 (private-repo Auth fix
@@ -418,6 +539,10 @@ jobs:
           postman-access-token: ${{ secrets.POSTMAN_ACCESS_TOKEN }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           gh-fallback-token: ${{ secrets.GH_FALLBACK_TOKEN }}
+          # --- Insights / API Catalog system-env hookup ---
+          enable-insights: ${{ steps.insights.outputs.enable-insights }}
+          system-env-map-json: '${{ steps.insights.outputs.system-env-map-json }}'
+          cluster-name: ${{ steps.insights.outputs.cluster-name }}
 
       # -------------------------------------------------------------------
       # Postman CLI verification.
