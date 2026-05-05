@@ -1,18 +1,10 @@
 type: http
-name: Echo a message back to the caller
-url: '{{baseUrl}}/jeff-test/echo'
-method: POST
+name: List circles
+url: '{{baseUrl}}/circles'
+method: GET
 headers:
-  - key: Content-Type
-    value: application/json
   - key: Accept
     value: application/json
-body:
-  type: json
-  content: |-
-    {
-      "message": "hello world"
-    }
 scripts:
   - type: afterResponse
     code:
@@ -38,24 +30,47 @@ examples:
       body:
         type: json
         content: |-
-          {
-            "message": "hello world"
-          }
+          [
+            {
+              "id": "string",
+              "name": "string",
+              "memberCount": 8736
+            },
+            {
+              "id": "string",
+              "name": "string",
+              "memberCount": 1356
+            }
+          ]
       headers:
         - key: Content-Type
           value: application/json
-    name: Echoed message.
+    name: A list of circles
   - response:
-      statusCode: 400
-      statusText: Bad Request
+      statusCode: 401
+      statusText: Unauthorized
       body:
         type: json
         content: |-
           {
-            "code": "INTERNAL_ERROR",
-            "message": "Something went wrong."
+            "code": 6097,
+            "message": "string"
           }
       headers:
         - key: Content-Type
           value: application/json
-    name: Invalid request body.
+    name: Unauthorized
+  - response:
+      statusCode: 500
+      statusText: Internal Server Error
+      body:
+        type: json
+        content: |-
+          {
+            "code": 6097,
+            "message": "string"
+          }
+      headers:
+        - key: Content-Type
+          value: application/json
+    name: Internal server error

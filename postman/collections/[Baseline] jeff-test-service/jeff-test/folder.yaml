@@ -1,5 +1,0 @@
-type: folder
-name: jeff-test
-items:
-  - ref: ./ping/folder.yaml
-  - ref: ./echo/folder.yaml

@@ -1,10 +1,14 @@
 type: http
-name: Health check
-url: '{{baseUrl}}/jeff-test/ping'
+name: Get a circle
+url: '{{baseUrl}}/circles/:circleId'
 method: GET
 headers:
   - key: Accept
     value: application/json
+pathVariables:
+  - key: circleId
+    value: abc123
+    description: Unique identifier for a circle
 scripts:
   - type: afterResponse
     code:
@@ -31,13 +35,42 @@ examples:
         type: json
         content: |-
           {
-            "status": "ok",
-            "timestamp": "2026-05-04T12:00:00Z"
+            "id": "string",
+            "name": "string",
+            "memberCount": 4372
           }
       headers:
         - key: Content-Type
           value: application/json
-    name: Service is reachable.
+    name: Circle details
+  - response:
+      statusCode: 401
+      statusText: Unauthorized
+      body:
+        type: json
+        content: |-
+          {
+            "code": 6097,
+            "message": "string"
+          }
+      headers:
+        - key: Content-Type
+          value: application/json
+    name: Unauthorized
+  - response:
+      statusCode: 404
+      statusText: Not Found
+      body:
+        type: json
+        content: |-
+          {
+            "code": 6097,
+            "message": "string"
+          }
+      headers:
+        - key: Content-Type
+          value: application/json
+    name: Circle not found
   - response:
       statusCode: 500
       statusText: Internal Server Error
@@ -45,10 +78,10 @@ examples:
         type: json
         content: |-
           {
-            "code": "INTERNAL_ERROR",
-            "message": "Something went wrong."
+            "code": 6097,
+            "message": "string"
           }
       headers:
         - key: Content-Type
           value: application/json
-    name: Server error.
+    name: Internal server error

@@ -1,4 +1,0 @@
-type: folder
-name: ping
-items:
-  - ref: ./Health check.request.yaml
