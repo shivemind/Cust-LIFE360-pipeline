@@ -1,0 +1,12 @@
+$schema: https://schema.postman.com/json/draft-2020-12/collection/v3.0.0/
+type: collection
+name: '[Contract] preflight-checks'
+description: Minimal baseline spec for onboarding-pipeline testing. Not intended to match the real service.
+id: 656758ae-57b3-4799-b8e0-b28a7c8925cc
+variables:
+  - key: baseUrl
+    value: http://localhost:8999
+    type: any
+items:
+  - ref: ./infra-check/folder.yaml
+  - ref: ./00 - Resolve Secrets.request.yaml

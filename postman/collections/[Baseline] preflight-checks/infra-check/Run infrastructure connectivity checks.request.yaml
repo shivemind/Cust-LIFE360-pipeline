@@ -1,0 +1,22 @@
+type: http
+name: Run infrastructure connectivity checks
+url: '{{baseUrl}}/infra-check'
+method: GET
+headers:
+  - key: Accept
+    value: application/json
+examples:
+  - response:
+      statusCode: 200
+      statusText: OK
+      body:
+        type: json
+        content: |-
+          {
+            "overall_status": "fail",
+            "timestamp": "2026-05-05T12:00:00Z"
+          }
+      headers:
+        - key: Content-Type
+          value: application/json
+    name: Check run completed.
