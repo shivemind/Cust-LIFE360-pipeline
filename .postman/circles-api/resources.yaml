@@ -1,4 +1,5 @@
-workspace: {}
+workspace:
+  id: 3fd92105-5ba8-4234-bf62-a9b5d6995d9f
 localResources:
   collections:
   - ../postman/collections/[Baseline] circles-api

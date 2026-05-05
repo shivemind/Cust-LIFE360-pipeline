@@ -2,7 +2,7 @@ $schema: https://schema.postman.com/json/draft-2020-12/collection/v3.0.0/
 type: collection
 name: '[Contract] circles-api'
 description: Manage Life360 circles and memberships
-id: 2e360ad4-9be5-47ea-83d8-e8f66f31ecf8
+id: f4e0609c-8f04-473c-8e8a-941ff292edba
 variables:
   - key: baseUrl
     value: https://api.life360.com/v3

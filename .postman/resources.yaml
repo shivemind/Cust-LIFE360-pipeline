@@ -13,10 +13,10 @@ localResources:
     - ../swaggerhub_apis/life360/preflight-checks-1.0.0.yaml
 cloudResources:
   collections:
-    ../postman/collections/[Baseline] circles-api: 52400725-c43d5c24-eb6a-4111-8b5e-d8b9d4719c3c
-    ../postman/collections/[Smoke] circles-api: 52400725-5a65b443-296d-4cec-becc-36e5f3798676
-    ../postman/collections/[Contract] circles-api: 52400725-2e360ad4-9be5-47ea-83d8-e8f66f31ecf8
+    ../postman/collections/[Baseline] circles-api: 52400725-530c6ed0-a7fa-4e1e-93e9-8c2fef7dabb9
+    ../postman/collections/[Smoke] circles-api: 52400725-2ed2a897-da22-4658-9086-d198e510671e
+    ../postman/collections/[Contract] circles-api: 52400725-f4e0609c-8f04-473c-8e8a-941ff292edba
   environments:
-    ../postman/environments/prod.postman_environment.json: 52400725-e874c4aa-37f4-4c54-884b-f90012ad01b7
+    ../postman/environments/prod.postman_environment.json: 52400725-e5f8777d-f0c8-407b-951c-154ae613ca36
   specs:
     ../swaggerhub_apis/life360/circles-api-1.0.0.yaml: 8c5a5726-c320-4073-aed5-90d4c229d40c
