@@ -1,0 +1,8 @@
+workspace: {}
+localResources:
+  collections: []
+  environments: []
+  specs: []
+cloudResources:
+  collections: {}
+  environments: {}
