@@ -10,5 +10,9 @@ localResources:
   specs:
   - ../swaggerhub_apis/life360/circles-api-1.0.0.yaml
 cloudResources:
-  collections: {}
-  environments: {}
+  collections:
+    ../postman/collections/[Baseline] circles-api: 52400725-530c6ed0-a7fa-4e1e-93e9-8c2fef7dabb9
+    ../postman/collections/[Smoke] circles-api: 52400725-2ed2a897-da22-4658-9086-d198e510671e
+    ../postman/collections/[Contract] circles-api: 52400725-f4e0609c-8f04-473c-8e8a-941ff292edba
+  environments:
+    ../postman/environments/prod.postman_environment.json: 52400725-e5f8777d-f0c8-407b-951c-154ae613ca36

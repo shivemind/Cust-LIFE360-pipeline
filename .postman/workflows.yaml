@@ -1,8 +1,8 @@
 workflows:
   syncSpecToCollection:
-    - spec: ../swaggerhub_apis/life360/jeff-test-service-1.0.0.yaml
-      collection: ../postman/collections/[Baseline] jeff-test-service
-    - spec: ../swaggerhub_apis/life360/jeff-test-service-1.0.0.yaml
-      collection: ../postman/collections/[Smoke] jeff-test-service
-    - spec: ../swaggerhub_apis/life360/jeff-test-service-1.0.0.yaml
-      collection: ../postman/collections/[Contract] jeff-test-service
+    - spec: ../swaggerhub_apis/life360/circles-api-1.0.0.yaml
+      collection: ../postman/collections/[Baseline] circles-api
+    - spec: ../swaggerhub_apis/life360/circles-api-1.0.0.yaml
+      collection: ../postman/collections/[Smoke] circles-api
+    - spec: ../swaggerhub_apis/life360/circles-api-1.0.0.yaml
+      collection: ../postman/collections/[Contract] circles-api

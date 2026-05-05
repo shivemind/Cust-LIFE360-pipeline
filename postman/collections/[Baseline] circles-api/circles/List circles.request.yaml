@@ -1,0 +1,58 @@
+type: http
+name: List circles
+url: '{{baseUrl}}/circles'
+method: GET
+headers:
+  - key: Accept
+    value: application/json
+examples:
+  - response:
+      statusCode: 200
+      statusText: OK
+      body:
+        type: json
+        content: |-
+          [
+            {
+              "id": "string",
+              "name": "string",
+              "memberCount": 3318
+            },
+            {
+              "id": "string",
+              "name": "string",
+              "memberCount": 3558
+            }
+          ]
+      headers:
+        - key: Content-Type
+          value: application/json
+    name: A list of circles
+  - response:
+      statusCode: 401
+      statusText: Unauthorized
+      body:
+        type: json
+        content: |-
+          {
+            "code": 9241,
+            "message": "string"
+          }
+      headers:
+        - key: Content-Type
+          value: application/json
+    name: Unauthorized
+  - response:
+      statusCode: 500
+      statusText: Internal Server Error
+      body:
+        type: json
+        content: |-
+          {
+            "code": 9241,
+            "message": "string"
+          }
+      headers:
+        - key: Content-Type
+          value: application/json
+    name: Internal server error
