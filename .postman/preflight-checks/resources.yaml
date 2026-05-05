@@ -5,5 +5,9 @@ localResources:
   environments: []
   specs: []
 cloudResources:
-  collections: {}
-  environments: {}
+  collections:
+    ../postman/collections/[Baseline] preflight-checks: 52400725-217f676a-2689-44c3-9668-3d6d0621b7bb
+    ../postman/collections/[Smoke] preflight-checks: 52400725-dd1d0cc3-e36e-41f9-9c5d-0c466881afd6
+    ../postman/collections/[Contract] preflight-checks: 52400725-656758ae-57b3-4799-b8e0-b28a7c8925cc
+  environments:
+    ../postman/environments/prod.postman_environment.json: 52400725-5bd1f75c-8836-4d69-91eb-e90b90a2b181

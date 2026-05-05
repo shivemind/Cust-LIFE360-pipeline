@@ -1,10 +1,10 @@
 workspace:
-  id: 3fd92105-5ba8-4234-bf62-a9b5d6995d9f
+  id: efb15d25-f47b-4dc3-b85c-09aa73d0f88d
 localResources:
   collections:
-    - ../postman/collections/[Baseline] circles-api
-    - ../postman/collections/[Smoke] circles-api
-    - ../postman/collections/[Contract] circles-api
+    - ../postman/collections/[Baseline] preflight-checks
+    - ../postman/collections/[Smoke] preflight-checks
+    - ../postman/collections/[Contract] preflight-checks
   environments:
     - ../postman/environments/prod.postman_environment.json
   specs:
@@ -13,10 +13,10 @@ localResources:
     - ../swaggerhub_apis/life360/preflight-checks-1.0.0.yaml
 cloudResources:
   collections:
-    ../postman/collections/[Baseline] circles-api: 52400725-530c6ed0-a7fa-4e1e-93e9-8c2fef7dabb9
-    ../postman/collections/[Smoke] circles-api: 52400725-2ed2a897-da22-4658-9086-d198e510671e
-    ../postman/collections/[Contract] circles-api: 52400725-f4e0609c-8f04-473c-8e8a-941ff292edba
+    ../postman/collections/[Baseline] preflight-checks: 52400725-217f676a-2689-44c3-9668-3d6d0621b7bb
+    ../postman/collections/[Smoke] preflight-checks: 52400725-dd1d0cc3-e36e-41f9-9c5d-0c466881afd6
+    ../postman/collections/[Contract] preflight-checks: 52400725-656758ae-57b3-4799-b8e0-b28a7c8925cc
   environments:
-    ../postman/environments/prod.postman_environment.json: 52400725-e5f8777d-f0c8-407b-951c-154ae613ca36
+    ../postman/environments/prod.postman_environment.json: 52400725-5bd1f75c-8836-4d69-91eb-e90b90a2b181
   specs:
-    ../swaggerhub_apis/life360/circles-api-1.0.0.yaml: 8c5a5726-c320-4073-aed5-90d4c229d40c
+    ../swaggerhub_apis/life360/preflight-checks-1.0.0.yaml: f0eae3fa-965b-47bc-ae3c-8a23f9846616
