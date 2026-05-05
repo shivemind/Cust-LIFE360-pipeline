@@ -2,9 +2,6 @@
   "organization": "Life360",
   "domain": "life360-platform",
   "domain_code": "L360",
-  "governance_mapping": {
-    "life360-platform": "Life360 API Platform"
-  },
   "apis": [
     {
       "name": "circles-api",

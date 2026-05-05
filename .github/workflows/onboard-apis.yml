@@ -53,7 +53,7 @@ jobs:
           echo "apis=$APIS" >> "$GITHUB_OUTPUT"
           echo "domain=$(jq -r '.domain' life360-api-manifest.json)" >> "$GITHUB_OUTPUT"
           echo "domain_code=$(jq -r '.domain_code' life360-api-manifest.json)" >> "$GITHUB_OUTPUT"
-          echo "governance=$(jq -c '.governance_mapping' life360-api-manifest.json)" >> "$GITHUB_OUTPUT"
+          echo "governance=$(jq -c '.governance_mapping // {}' life360-api-manifest.json)" >> "$GITHUB_OUTPUT"
 
   # ---------------------------------------------------------------------------
   # 2. For each API in the matrix, run the full onboarding pipeline.
@@ -418,6 +418,87 @@ jobs:
           postman-access-token: ${{ secrets.POSTMAN_ACCESS_TOKEN }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           gh-fallback-token: ${{ secrets.GH_FALLBACK_TOKEN }}
+
+      # -------------------------------------------------------------------
+      # Postman CLI verification.
+      #
+      # 1. Asserts the env's baseUrl matches one of the spec's servers[].url
+      #    for every environment named in the manifest.  This is the
+      #    "prod-to-prod" linkage: when a developer opens the spec in Spec
+      #    Hub and selects this env, the {{baseUrl}} variable resolves to the
+      #    same URL the spec advertises as its prod (or staging) server.
+      # 2. Logs in with the Postman CLI as a smoke check that the team's
+      #    PMAK still works after the action's run, and that the workspace
+      #    is reachable via the CLI for the auto-generated CI workflow that
+      #    calls `postman collection run` against these collections.
+      # -------------------------------------------------------------------
+      - name: Verify spec-environment hookup
+        if: success()
+        env:
+          POSTMAN_API_KEY: ${{ secrets.POSTMAN_API_KEY }}
+          API_NAME: ${{ matrix.api.name }}
+          SPEC_PATH: ${{ matrix.api.spec_path }}
+          ENVIRONMENTS_JSON: ${{ toJSON(matrix.api.environments) }}
+          RUNTIME_URLS_JSON: ${{ toJSON(matrix.api.runtime_urls) }}
+          WORKSPACE_ID: ${{ steps.onboard.outputs.workspace-id }}
+        run: |
+          set -euo pipefail
+
+          # --- Install + login to Postman CLI ---
+          if ! command -v postman >/dev/null; then
+            curl -o- "https://dl-cli.pstmn.io/install/linux64.sh" | sh
+          fi
+          postman --version
+          postman login --with-api-key "$POSTMAN_API_KEY"
+
+          # --- Verify env baseUrl matches spec servers[].url ---
+          python3 << 'PYEOF'
+          import json, os, sys, urllib.request, yaml
+
+          api_name   = os.environ["API_NAME"]
+          spec_path  = os.environ["SPEC_PATH"]
+          env_names  = json.loads(os.environ["ENVIRONMENTS_JSON"])
+          runtime    = json.loads(os.environ["RUNTIME_URLS_JSON"])
+          ws_id      = os.environ.get("WORKSPACE_ID", "")
+          api_key    = os.environ["POSTMAN_API_KEY"]
+
+          spec = yaml.safe_load(open(spec_path))
+          spec_servers = [s.get("url", "") for s in (spec.get("servers") or [])]
+
+          def pm_get(path, params=""):
+              req = urllib.request.Request(
+                  f"https://api.getpostman.com{path}{('?' + params) if params else ''}",
+                  headers={"X-Api-Key": api_key, "Accept": "application/json"},
+              )
+              return json.loads(urllib.request.urlopen(req, timeout=20).read())
+
+          ws_envs = pm_get("/environments", f"workspace={ws_id}").get("environments", []) if ws_id else []
+          envs_by_name = {e["name"]: e["uid"] for e in ws_envs}
+
+          print(f"Spec servers for {api_name}: {spec_servers}")
+          print(f"Manifest environments: {env_names}")
+          print(f"Workspace envs: {list(envs_by_name.keys())}")
+
+          failures = 0
+          for env_name in env_names:
+              expected_url = (runtime or {}).get(env_name, "")
+              env_label = f"{api_name} - {env_name}"
+              if expected_url and expected_url not in spec_servers:
+                  print(f"::warning::{api_name}: '{env_name}' runtime_url {expected_url} is not in spec servers — Spec Hub UI will not auto-match it")
+              if env_label not in envs_by_name:
+                  print(f"::error::{api_name}: workspace env '{env_label}' not found")
+                  failures += 1
+                  continue
+              env = pm_get(f"/environments/{envs_by_name[env_label]}").get("environment", {})
+              base = next((v["value"] for v in env.get("values", []) if v.get("key") == "baseUrl"), None)
+              if base != expected_url:
+                  print(f"::error::{api_name}: env '{env_label}' baseUrl={base!r} != manifest runtime_url={expected_url!r}")
+                  failures += 1
+              else:
+                  print(f"OK {api_name}: '{env_label}' baseUrl={base} <-> spec server (prod-to-prod hookup)")
+
+          sys.exit(1 if failures else 0)
+          PYEOF
 
       # -------------------------------------------------------------------
       # Move action output back into per-API directories and commit.

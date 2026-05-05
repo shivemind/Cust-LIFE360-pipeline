@@ -136,7 +136,6 @@ This produces one directory per API under `~/life360-repos/`:
 │   │   └── api-governance.yml
 │   ├── specs/circles-api-1.2.0.yaml
 │   ├── api-manifest.json
-│   ├── .spectral.yaml
 │   ├── .gitignore
 │   └── README.md
 ├── location-api/

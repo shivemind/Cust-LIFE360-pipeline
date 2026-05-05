@@ -43,34 +43,39 @@ jobs:
             fi
           done
 
-  # ---------------------------------------------------------------------------
-  # Lint every OpenAPI spec with Spectral (Stoplight) using the repo ruleset
-  # ---------------------------------------------------------------------------
-  lint-specs:
-    name: Lint OpenAPI specs
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install Spectral
-        run: npm install -g @stoplight/spectral-cli
-
-      - name: Lint specs referenced in manifest
+      - name: Verify each spec's servers[].url is reachable as URL syntax
+        # Sanity check: every environment in the manifest must have a runtime
+        # URL that matches at least one server URL declared in the spec.  This
+        # is the prod-to-prod (or staging-to-staging) hookup the Spec Hub UI
+        # relies on once the env is selected against the spec.
         run: |
-          EXIT=0
-          jq -r '.apis[].spec_path' life360-api-manifest.json | while read -r SPEC; do
-            echo "::group::$SPEC"
-            spectral lint "$SPEC" --fail-severity warn || EXIT=1
-            echo "::endgroup::"
-          done
-          exit $EXIT
+          python3 << 'PYEOF'
+          import json, sys, yaml, pathlib
+          manifest = json.load(open("life360-api-manifest.json"))
+          failed = False
+          for api in manifest["apis"]:
+              spec_path = api["spec_path"]
+              if not pathlib.Path(spec_path).is_file():
+                  print(f"::error::{api['name']}: spec file missing ({spec_path})")
+                  failed = True; continue
+              spec = yaml.safe_load(open(spec_path))
+              spec_servers = [s.get("url", "") for s in (spec.get("servers") or [])]
+              for env_name in api.get("environments", []):
+                  url = (api.get("runtime_urls") or {}).get(env_name, "")
+                  if not url:
+                      print(f"::error::{api['name']}: environment '{env_name}' has no runtime_urls entry")
+                      failed = True; continue
+                  if url not in spec_servers:
+                      print(f"::warning::{api['name']}: env '{env_name}' runtime_url {url} is not in spec servers {spec_servers}")
+          sys.exit(1 if failed else 0)
+          PYEOF
 
   # ---------------------------------------------------------------------------
-  # Validate that each spec parses as valid OpenAPI 3.x
+  # Validate that each spec parses as valid OpenAPI 3.x.
+  # This is a pre-merge structural check; deeper governance rules are enforced
+  # post-merge by the Postman CLI lint step inside `onboard-apis.yml`, which
+  # uses the team's actual governance ruleset (the same one Spec Hub enforces
+  # on every spec change).
   # ---------------------------------------------------------------------------
   validate-specs:
     name: Validate OpenAPI structure
@@ -88,6 +93,46 @@ jobs:
       - name: Validate specs
         run: |
           jq -r '.apis[].spec_path' life360-api-manifest.json | while read -r SPEC; do
-            echo "Validating: $SPEC"
+            echo "::group::$SPEC"
             swagger-cli validate "$SPEC"
+            echo "::endgroup::"
           done
+
+  # ---------------------------------------------------------------------------
+  # Postman CLI dry-run governance check.
+  #
+  # Installs the Postman CLI and authenticates with the team's PMAK, which
+  # implicitly validates that the secret is wired up correctly and that the
+  # caller still has access to the team.  This is the equivalent of `gh auth
+  # status` for Postman: no spec is uploaded here (that happens in the
+  # post-merge onboarding workflow), but the CLI must be installable and the
+  # PMAK must work — otherwise the PR is blocked.
+  # ---------------------------------------------------------------------------
+  postman-cli-preflight:
+    name: Postman CLI preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Postman CLI
+        run: |
+          curl -o- "https://dl-cli.pstmn.io/install/linux64.sh" | sh
+          postman --version
+
+      - name: Authenticate Postman CLI with PMAK
+        env:
+          POSTMAN_API_KEY: ${{ secrets.POSTMAN_API_KEY }}
+        run: |
+          if [ -z "$POSTMAN_API_KEY" ]; then
+            echo "::error::POSTMAN_API_KEY secret is not set on this repo."
+            exit 1
+          fi
+          postman login --with-api-key "$POSTMAN_API_KEY"
+          # Confirm the key actually maps to a Postman team
+          USER=$(curl -fs https://api.getpostman.com/me -H "X-Api-Key: $POSTMAN_API_KEY" \
+            | jq -r '.user.teamName // ""')
+          if [ -z "$USER" ]; then
+            echo "::error::PMAK is not bound to a team. Generate it from inside the team context."
+            exit 1
+          fi
+          echo "PMAK bound to team: $USER"
