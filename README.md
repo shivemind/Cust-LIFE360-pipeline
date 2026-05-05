@@ -41,7 +41,6 @@ flowchart TD
         COLS["Collections: Baseline + Smoke + Contract"]
         ENVS["Environments: prod + staging"]
         GOVGRP[Governance Groups]
-        PAN[Private API Network]
     end
 
     SH -->|Export| LOCAL
@@ -62,7 +61,6 @@ flowchart TD
 
     GOV -->|PR gate| SPEC
     GENCI -->|Smoke + Contract tests| COLS
-    GENCI -->|All pass| PAN
 ```
 
 ## Pipeline at a Glance
@@ -74,7 +72,6 @@ flowchart LR
     REPO -->|push triggers| BOOT["Bootstrap: workspace, spec, collections"]
     BOOT --> SYNC["Repo Sync: environments, CI, Bifrost link"]
     SYNC --> CI["Generated CI: smoke + contract tests"]
-    CI -->|All pass| PAN["Promote to Private API Network"]
 ```
 
 **Stage 1 — Normalize** — `Spec-Migration-Normalize` ingests exported specs (OpenAPI, Swagger 2.0, RAML, API Blueprint, Postman Collections, etc.), converts them to clean OpenAPI 3.x YAML, and scaffolds a **self-contained GitHub repo per service** with pre-configured workflows, manifest, and Spectral config.
@@ -91,7 +88,7 @@ flowchart LR
 - A per-API **CI workflow** committed to the repo for ongoing smoke and contract testing
 - **Workspace ↔ repo git link** via Bifrost
 
-**Stage 4 — Test & Promote** — auto-generated CI runs smoke and contract tests; passing APIs are promoted to the Private API Network.
+**Stage 4 — Test** — auto-generated CI runs smoke and contract tests against the live runtime URLs from each environment.
 
 ## Bulk Migration from SwaggerHub
 
@@ -136,7 +133,6 @@ life360-scaffolded-repos/
 ├── circles-api/
 │   ├── .github/workflows/onboard-apis.yml
 │   ├── .github/workflows/api-governance.yml
-│   ├── .github/workflows/promote-to-private-network.yml
 │   ├── specs/circles-api-1.2.0.yaml
 │   ├── api-manifest.json
 │   ├── .spectral.yaml
@@ -205,7 +201,7 @@ gh secret set GH_FALLBACK_TOKEN    --repo <owner>/<repo>
 
 ### 2. Add API specs
 
-Place OpenAPI YAML files under `swaggerhub_apis/<project>/`:
+Place OpenAPI YAML files under `swaggerhub_apis/<project>/`. **Drop in as many as you want — the matrix onboards one workspace per manifest entry.**
 
 ```
 swaggerhub_apis/
@@ -215,9 +211,27 @@ swaggerhub_apis/
     └── safety-api-1.0.0.yaml
 ```
 
+Each onboarded API gets its own isolated state tree:
+
+```
+.postman/
+├── circles-api/
+│   ├── resources.yaml
+│   └── workflows.yaml
+├── places-api/
+│   └── ...
+postman/
+├── circles-api/
+│   ├── collections/
+│   ├── environments/
+│   └── globals/
+├── places-api/
+│   └── ...
+```
+
 ### 3. Register APIs in the manifest
 
-Add each API to `life360-api-manifest.json`:
+Add each API to `life360-api-manifest.json`. Each entry produces a workspace named `[<DOMAIN_CODE>] <name>` in the API Catalog:
 
 ```json
 {
@@ -254,11 +268,22 @@ The `onboard-apis` workflow runs automatically. Check the Actions tab for a per-
 
 ## Idempotency
 
-The pipeline is designed to be safely re-runnable. Three layers prevent duplicate resources:
+The pipeline is designed to be safely re-runnable. Five layers prevent duplicate resources and protect against state-file loss:
 
-1. **Workflow trigger guards** — `onboard-apis.yml` uses `paths-ignore` for `.postman/**`, `postman/**`, and `.github/workflows/postman-ci-*` so artifact commits from repo-sync don't re-trigger onboarding.
-2. **Workspace name fallback** — if `.postman/resources.yaml` is missing (first run or failed push), the resolve step searches the Postman API for an existing workspace matching `[DOMAIN_CODE] api-name` before creating a new one.
-3. **CI workflow path filters** — auto-generated `postman-ci-*.yml` files include `paths-ignore` to prevent cascading runs from sync artifact commits.
+1. **Per-API state isolation** — every service has its own `.postman/<api-name>/resources.yaml` and `postman/<api-name>/` artifact tree. Onboarding service A never overwrites service B's state.
+2. **Live ID validation** — the resolve step calls `GET /workspaces/{id}`, `GET /collections/{uid}`, and `GET /environments/{uid}` for every stored ID before passing them to the action. Anything that returns 404 is dropped from the inputs and the on-disk state file, and the action recreates it. This is what protects against the `400 / 404 "team feature is not available"` and `404 environment not found` errors caused by manual deletions in the Postman UI.
+3. **Name-based workspace fallback** — if `.postman/<api>/resources.yaml` is missing or its workspace ID 404s, the resolve step searches `GET /workspaces` for `[<DOMAIN_CODE>] <api-name>` and reuses that ID before creating anything new.
+4. **Workflow trigger guards** — `onboard-apis.yml` uses `paths-ignore` for `.postman/**`, `postman/**`, and `.github/workflows/postman-ci-*` plus `[skip ci]` on persist commits so artifact commits don't re-trigger onboarding.
+5. **CI workflow path filters** — auto-generated `postman-ci-*.yml` files include `paths-ignore` to prevent cascading runs from sync artifact commits.
+
+### Recovering from deletions
+
+| You did | What happens on next run | What you do |
+|---|---|---|
+| Deleted `.postman/<api>/resources.yaml` | Resolve step does name lookup `[<DOMAIN_CODE>] <api>`, reuses existing workspace, walks specs/collections/envs to rebuild state file. | Nothing — just push. |
+| Deleted an environment in the Postman UI | Resolve step's `GET /environments/{uid}` returns 404, env UID is dropped, action recreates the env. | Nothing — just push. |
+| Deleted the workspace in the Postman UI | Resolve step's workspace 404 + name lookup miss → action creates a fresh workspace, spec, and collections from scratch. | Nothing — just push. |
+| Want to fully wipe and rebuild | Use `workflow_dispatch` with `force-rebuild: true` to ignore stored IDs entirely. | `gh workflow run onboard-apis.yml -f force-rebuild=true`. |
 
 ## Workflows
 
@@ -267,25 +292,6 @@ The pipeline is designed to be safely re-runnable. Three layers prevent duplicat
 | `onboard-apis.yml` | Push to `main` (spec/manifest changes), `workflow_dispatch` | Full onboarding pipeline per API |
 | `api-governance.yml` | Pull request (spec/manifest changes) | Spectral lint, manifest validation, spec structure check |
 | `postman-ci-<api-name>.yml` | Auto-generated by `repo-sync-action` | Smoke + contract tests using Postman CLI |
-| `promote-to-private-network.yml` | After onboard or CI succeeds, `workflow_dispatch` | Promote qualifying workspaces to Private API Network |
-
-## Private API Network Promotion
-
-After an API passes all quality gates — Spectral lint, onboarding, smoke tests, and contract tests — the `promote-to-private-network` workflow automatically adds its workspace to the team's [Private API Network](https://learning.postman.com/docs/collaborating-in-postman/private-api-network/managing-private-network/).
-
-The workflow:
-
-1. **Quality gate** — checks that the most recent runs of `onboard-apis.yml` and `postman-ci-<api-name>.yml` both succeeded on `main`.
-2. **Folder creation** — ensures a Private API Network folder exists (name configurable in the manifest under `private_network.folder_name`). Idempotent — re-runs reuse the existing folder.
-3. **Workspace promotion** — adds each qualifying workspace to the folder. Already-listed workspaces are skipped.
-
-```mermaid
-flowchart LR
-    ONBOARD["Onboard succeeds"] --> GATE{Quality gate}
-    CI["CI tests pass"] --> GATE
-    GATE -->|All pass| PROMOTE["Add workspace to Private API Network"]
-    GATE -->|Any fail| SKIP["Skip promotion"]
-```
 
 ## Governance
 
@@ -314,7 +320,6 @@ life360-circles-api/
 │   └── workflows/
 │       ├── onboard-apis.yml                # Onboarding pipeline
 │       ├── api-governance.yml              # PR-time spec validation
-│       ├── promote-to-private-network.yml  # Quality-gated PAN promotion
 │       └── postman-ci-circles-api.yml      # Auto-generated test workflow
 ├── .postman/                               # Generated by repo-sync (auto-committed)
 │   ├── resources.yaml
@@ -337,8 +342,7 @@ life360-circles-api/
 ├── .github/
 │   └── workflows/
 │       ├── onboard-apis.yml              # Main onboarding pipeline (template)
-│       ├── api-governance.yml            # PR-time spec validation
-│       └── promote-to-private-network.yml
+│       └── api-governance.yml            # PR-time spec validation
 ├── .spectral.yaml                        # Spectral OpenAPI lint ruleset
 ├── life360-api-manifest.json             # API registry / manifest
 ├── swaggerhub_apis/                      # Source OpenAPI specs
@@ -354,7 +358,7 @@ life360-circles-api/
 
 | Secret | Required By | Description |
 |--------|-------------|-------------|
-| `POSTMAN_API_KEY` | `onboard-apis.yml`, `promote-to-private-network.yml` | Postman API key (starts with `PMAK-`) |
+| `POSTMAN_API_KEY` | `onboard-apis.yml` | Postman API key (starts with `PMAK-`) |
 | `POSTMAN_ACCESS_TOKEN` | `onboard-apis.yml` | Session token for Bifrost linking and governance (requires periodic refresh) |
 | `GH_FALLBACK_TOKEN` | `onboard-apis.yml` | GitHub PAT with `workflow` + `repo` scopes — used by repo-sync to commit generated workflow files |
 

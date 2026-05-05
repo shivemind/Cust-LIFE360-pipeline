@@ -5,19 +5,27 @@
   "governance_mapping": {
     "life360-platform": "Life360 API Platform"
   },
-  "private_network": {
-    "folder_name": "Life360 APIs",
-    "folder_description": "Life360 APIs that have passed lint, smoke, and contract tests."
-  },
   "apis": [
     {
       "name": "circles-api",
       "spec_path": "swaggerhub_apis/life360/circles-api-1.0.0.yaml",
       "spec_url": "",
       "environments": ["prod"],
-      "runtime_urls": {
-        "prod": "https://api.life360.com/v3"
-      }
+      "runtime_urls": { "prod": "https://api.life360.com/v3" }
+    },
+    {
+      "name": "preflight-checks",
+      "spec_path": "swaggerhub_apis/life360/preflight-checks-1.0.0.yaml",
+      "spec_url": "",
+      "environments": ["prod"],
+      "runtime_urls": { "prod": "http://localhost:8999" }
+    },
+    {
+      "name": "jeff-test-service",
+      "spec_path": "swaggerhub_apis/life360/jeff-test-service-1.0.0.yaml",
+      "spec_url": "",
+      "environments": ["prod"],
+      "runtime_urls": { "prod": "https://api.life360.com/v3" }
     }
   ]
 }

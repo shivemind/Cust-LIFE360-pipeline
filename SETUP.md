@@ -133,8 +133,7 @@ This produces one directory per API under `~/life360-repos/`:
 ├── circles-api/
 │   ├── .github/workflows/
 │   │   ├── onboard-apis.yml
-│   │   ├── api-governance.yml
-│   │   └── promote-to-private-network.yml
+│   │   └── api-governance.yml
 │   ├── specs/circles-api-1.2.0.yaml
 │   ├── api-manifest.json
 │   ├── .spectral.yaml
@@ -259,11 +258,11 @@ for c in d.get('collections', []):
 | Environments | 2 | `<api> - prod`, `<api> - staging` |
 | Spec Hub entry | 1 | `<api>` |
 
-## 9. Post-Setup: CI Tests and Private API Network
+## 9. Post-Setup: CI Tests
 
 Once onboarding completes, the repo-sync action commits a `postman-ci-<api-name>.yml` workflow to each repo. This runs smoke and contract tests on every push to `main`.
 
-After CI tests pass, the `promote-to-private-network.yml` workflow promotes the workspace to the team's Private API Network folder — making the API discoverable by all team members.
+If you want APIs added to the team's Private API Network, do that step manually in the Postman UI per workspace — the pipeline no longer automates it.
 
 ### Known fix needed for auto-generated CI workflows
 

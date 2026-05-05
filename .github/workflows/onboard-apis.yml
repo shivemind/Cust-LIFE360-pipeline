@@ -12,10 +12,19 @@ on:
         description: 'Onboard a single API by name (blank = all APIs)'
         type: string
         default: ''
+      force-rebuild:
+        description: 'Ignore stored asset IDs and recreate everything (use after manual deletion in Postman UI)'
+        type: boolean
+        default: false
 
 permissions:
   actions: write
   contents: write
+
+# Serialize matrix iterations so per-API persist commits don't race on push.
+concurrency:
+  group: onboard-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -49,9 +58,13 @@ jobs:
   # ---------------------------------------------------------------------------
   # 2. For each API in the matrix, run the full onboarding pipeline.
   #
-  #    Existing asset IDs are resolved from .postman/resources.yaml and the
-  #    Postman API so re-runs reuse everything (idempotent).
-  #    collection-sync-mode=reuse prevents regenerating collections each run.
+  #    State for each API lives under .postman/<api>/ and postman/<api>/.
+  #    Each iteration:
+  #      a. resolves + validates that API's stored asset IDs (drops 404s)
+  #      b. stages the per-API state to the top-level paths the action expects
+  #      c. runs the bootstrap + repo-sync action
+  #      d. persists the action's output back into .postman/<api>/ and
+  #         postman/<api>/ and pushes the per-API commit
   # ---------------------------------------------------------------------------
   onboard:
     name: "${{ matrix.api.name }}"
@@ -62,11 +75,19 @@ jobs:
       contents: write
     strategy:
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 1
       matrix:
         api: ${{ fromJSON(needs.discover.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_FALLBACK_TOKEN }}
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Resolve spec URL
         id: spec-url
@@ -78,97 +99,227 @@ jobs:
             echo "url=https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/${{ matrix.api.spec_path }}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Resolve existing Postman asset IDs
+      # -------------------------------------------------------------------
+      # Resolve + validate stored asset IDs.
+      #
+      # Steps:
+      #   1. Read .postman/<api>/resources.yaml (with legacy top-level
+      #      fallback for repos that haven't migrated yet).
+      #   2. Validate every ID against the Postman API. 404s mean the asset
+      #      was deleted in the UI; drop the ID so the action recreates it.
+      #   3. If no valid workspace ID survives, fall back to a name search
+      #      ([<DOMAIN_CODE>] <api-name>) before giving up and creating a
+      #      brand-new workspace.
+      #   4. Re-emit a sanitized resources.yaml so the action never sees a
+      #      stale env / collection / spec UID.
+      # -------------------------------------------------------------------
+      - name: Resolve + validate Postman asset IDs
         id: existing
         env:
           POSTMAN_API_KEY: ${{ secrets.POSTMAN_API_KEY }}
+          DOMAIN_CODE: ${{ needs.discover.outputs.domain_code }}
+          API_NAME: ${{ matrix.api.name }}
+          FORCE_REBUILD: ${{ inputs.force-rebuild }}
         run: |
           python3 << 'PYEOF'
-          import json, os, sys, urllib.request, yaml
+          import json, os, urllib.request, urllib.error, yaml, pathlib
 
-          out_path = os.environ["GITHUB_OUTPUT"]
-          api_key = os.environ.get("POSTMAN_API_KEY", "")
-          api_name = "${{ matrix.api.name }}"
+          out_path  = os.environ["GITHUB_OUTPUT"]
+          api_key   = os.environ.get("POSTMAN_API_KEY", "")
+          api_name  = os.environ["API_NAME"]
+          dom_code  = os.environ["DOMAIN_CODE"]
+          force     = os.environ.get("FORCE_REBUILD", "false").lower() == "true"
+          ws_label  = f"[{dom_code}] {api_name}"
 
-          def pm_get(endpoint, params=""):
-              url = f"https://api.getpostman.com{endpoint}{'?' + params if params else ''}"
-              req = urllib.request.Request(url, headers={
+          per_api_path = pathlib.Path(f".postman/{api_name}/resources.yaml")
+          legacy_path  = pathlib.Path(".postman/resources.yaml")
+
+          state_path = per_api_path if per_api_path.is_file() else (legacy_path if legacy_path.is_file() else None)
+          state = {}
+          if state_path and not force:
+              with open(state_path) as f:
+                  state = yaml.safe_load(f) or {}
+              print(f"Loaded state from {state_path}")
+          elif force:
+              print("force-rebuild=true — ignoring stored state, recreating everything")
+          else:
+              print("No prior state file found — first run for this API")
+
+          def pm_request(method, endpoint, params=""):
+              url = f"https://api.getpostman.com{endpoint}{('?' + params) if params else ''}"
+              req = urllib.request.Request(url, method=method, headers={
                   "X-Api-Key": api_key,
                   "Accept": "application/vnd.api.v10+json",
               })
-              with urllib.request.urlopen(req, timeout=15) as resp:
+              with urllib.request.urlopen(req, timeout=20) as resp:
                   return json.loads(resp.read())
 
-          results = {
-              "workspace-id": "",
-              "spec-id": "",
-              "baseline-collection-id": "",
-              "smoke-collection-id": "",
-              "contract-collection-id": "",
-              "monitor-id": "",
-              "mock-url": "",
+          def asset_exists(endpoint):
+              if not api_key:
+                  return False
+              try:
+                  pm_request("GET", endpoint)
+                  return True
+              except urllib.error.HTTPError as e:
+                  if e.code in (404, 410):
+                      return False
+                  print(f"  Warning: validating {endpoint} returned {e.code}; treating as present")
+                  return True
+              except Exception as e:
+                  print(f"  Warning: validating {endpoint} failed ({e}); treating as present")
+                  return True
+
+          # ---------- workspace ----------
+          ws_id = (state.get("workspace") or {}).get("id", "")
+          if ws_id and not asset_exists(f"/workspaces/{ws_id}"):
+              print(f"  workspace {ws_id} no longer exists — dropping")
+              ws_id = ""
+
+          if not ws_id and api_key:
+              # Name-based fallback. Looks for [<DOMAIN_CODE>] <api-name>.
+              try:
+                  resp = pm_request("GET", "/workspaces")
+                  for w in resp.get("workspaces", []):
+                      if w.get("name") == ws_label:
+                          ws_id = w["id"]
+                          print(f"  matched existing workspace by name '{ws_label}' (id={ws_id})")
+                          break
+              except Exception as e:
+                  print(f"  Warning: workspace name lookup failed: {e}")
+
+          # ---------- collections (validate every UID) ----------
+          col_paths_by_label = {"baseline": "", "smoke": "", "contract": ""}
+          col_uids_by_label  = {"baseline": "", "smoke": "", "contract": ""}
+          cloud_collections = ((state.get("cloudResources") or {}).get("collections")) or {}
+          surviving_collections = {}
+          for path, uid in cloud_collections.items():
+              if not uid:
+                  continue
+              if not asset_exists(f"/collections/{uid}"):
+                  print(f"  collection {uid} ({path}) no longer exists — dropping")
+                  continue
+              surviving_collections[path] = uid
+              if "[Baseline]" in path:
+                  col_paths_by_label["baseline"] = path; col_uids_by_label["baseline"] = uid
+              elif "[Smoke]" in path:
+                  col_paths_by_label["smoke"]    = path; col_uids_by_label["smoke"]    = uid
+              elif "[Contract]" in path:
+                  col_paths_by_label["contract"] = path; col_uids_by_label["contract"] = uid
+
+          # ---------- environments (the 400/404 source) ----------
+          cloud_environments = ((state.get("cloudResources") or {}).get("environments")) or {}
+          surviving_environments = {}
+          for path, uid in cloud_environments.items():
+              if not uid:
+                  continue
+              if not asset_exists(f"/environments/{uid}"):
+                  print(f"  environment {uid} ({path}) no longer exists — dropping")
+                  continue
+              surviving_environments[path] = uid
+
+          # ---------- spec (look up by name in the workspace if we have one) ----------
+          spec_id = ""
+          if ws_id and api_key:
+              try:
+                  specs = pm_request("GET", "/specs", f"workspaceId={ws_id}").get("specs", [])
+                  for s in specs:
+                      if s.get("name") == api_name:
+                          spec_id = s["id"]
+                          break
+              except Exception as e:
+                  print(f"  Warning: spec lookup failed: {e}")
+
+          # ---------- monitor / mock (best-effort, scoped to workspace) ----------
+          monitor_id = ""
+          mock_url   = ""
+          if api_key:
+              try:
+                  for m in pm_request("GET", "/monitors").get("monitors", []):
+                      if api_name in m.get("name", "") and (not ws_id or m.get("workspace") == ws_id):
+                          monitor_id = m.get("uid", "")
+                          break
+              except Exception as e:
+                  print(f"  Warning: monitor lookup failed: {e}")
+              try:
+                  for m in pm_request("GET", "/mocks").get("mocks", []):
+                      if api_name in m.get("name", "") and m.get("mockUrl") and (not ws_id or m.get("workspace") == ws_id):
+                          mock_url = m["mockUrl"]
+                          break
+              except Exception as e:
+                  print(f"  Warning: mock lookup failed: {e}")
+
+          # ---------- write sanitized state file back to per-API path ----------
+          # Only the surviving (validated) IDs make it through. The action
+          # will recreate anything we dropped here.
+          per_api_path.parent.mkdir(parents=True, exist_ok=True)
+          sanitized = {
+              "workspace": {"id": ws_id} if ws_id else {},
+              "localResources": state.get("localResources") or {
+                  "collections":  list(surviving_collections.keys()) or [],
+                  "environments": list(surviving_environments.keys()) or [],
+                  "specs": [],
+              },
+              "cloudResources": {
+                  "collections":  surviving_collections,
+                  "environments": surviving_environments,
+              },
           }
+          with open(per_api_path, "w") as f:
+              yaml.safe_dump(sanitized, f, sort_keys=False)
+          print(f"Wrote sanitized state to {per_api_path}")
 
-          # --- resources.yaml: workspace + collections ---
-          resources_path = ".postman/resources.yaml"
-          if os.path.isfile(resources_path):
-              with open(resources_path) as f:
-                  data = yaml.safe_load(f) or {}
-              results["workspace-id"] = (data.get("workspace") or {}).get("id", "")
-              for path, uid in (data.get("cloudResources") or {}).get("collections", {}).items():
-                  if "[Baseline]" in path:
-                      results["baseline-collection-id"] = uid
-                  elif "[Smoke]" in path:
-                      results["smoke-collection-id"] = uid
-                  elif "[Contract]" in path:
-                      results["contract-collection-id"] = uid
-
-          ws_id = results["workspace-id"]
-          if not ws_id or not api_key:
-              print("First run or no API key — all assets will be created fresh")
-              with open(out_path, "a") as f:
-                  for k, v in results.items():
-                      f.write(f"{k}={v}\n")
-              raise SystemExit(0)
-
-          # --- Postman API: find existing spec by name in workspace ---
-          try:
-              specs = pm_get("/specs", f"workspaceId={ws_id}").get("specs", [])
-              for s in specs:
-                  if s.get("name") == api_name:
-                      results["spec-id"] = s["id"]
-                      break
-          except Exception as e:
-              print(f"  Warning: spec lookup failed: {e}")
-
-          # --- Postman API: find existing mock by name in workspace ---
-          try:
-              mocks = pm_get("/mocks").get("mocks", [])
-              for m in mocks:
-                  if api_name in m.get("name", "") and m.get("mockUrl"):
-                      results["mock-url"] = m["mockUrl"]
-                      break
-          except Exception as e:
-              print(f"  Warning: mock lookup failed: {e}")
-
-          # --- Postman API: find existing monitor by name ---
-          try:
-              monitors = pm_get("/monitors").get("monitors", [])
-              for m in monitors:
-                  if api_name in m.get("name", ""):
-                      results["monitor-id"] = m["uid"]
-                      break
-          except Exception as e:
-              print(f"  Warning: monitor lookup failed: {e}")
-
+          # ---------- expose to the rest of the job ----------
+          outputs = {
+              "workspace-id":             ws_id,
+              "spec-id":                  spec_id,
+              "baseline-collection-id":   col_uids_by_label["baseline"],
+              "smoke-collection-id":      col_uids_by_label["smoke"],
+              "contract-collection-id":   col_uids_by_label["contract"],
+              "monitor-id":               monitor_id,
+              "mock-url":                 mock_url,
+          }
           with open(out_path, "a") as f:
-              for k, v in results.items():
+              for k, v in outputs.items():
                   f.write(f"{k}={v}\n")
 
-          print("Resolved existing asset IDs for reuse:")
-          for k, v in results.items():
+          print("Resolved + validated asset IDs:")
+          for k, v in outputs.items():
               print(f"  {k}={v or '(will create)'}")
           PYEOF
+
+      # -------------------------------------------------------------------
+      # The bootstrap + repo-sync action expects state at top-level
+      # (.postman/resources.yaml + postman/{collections,environments,globals}/).
+      # Stage this API's per-service state into those paths just before the
+      # action runs.  The persist step below moves it back afterward.
+      # -------------------------------------------------------------------
+      - name: Stage per-API state for action
+        env:
+          API_NAME: ${{ matrix.api.name }}
+        run: |
+          set -euo pipefail
+          API="$API_NAME"
+
+          rm -f .postman/resources.yaml .postman/workflows.yaml
+          rm -rf postman/collections postman/environments postman/globals
+
+          if [ -f ".postman/${API}/resources.yaml" ]; then
+            cp ".postman/${API}/resources.yaml" .postman/resources.yaml
+          fi
+          if [ -f ".postman/${API}/workflows.yaml" ]; then
+            cp ".postman/${API}/workflows.yaml" .postman/workflows.yaml
+          fi
+
+          mkdir -p postman/collections postman/environments postman/globals
+          if [ -d "postman/${API}/collections" ]; then
+            cp -R "postman/${API}/collections/." postman/collections/
+          fi
+          if [ -d "postman/${API}/environments" ]; then
+            cp -R "postman/${API}/environments/." postman/environments/
+          fi
+          if [ -d "postman/${API}/globals" ]; then
+            cp -R "postman/${API}/globals/." postman/globals/
+          fi
 
       - name: Onboard to Postman v12 API Catalog
         # Pinned to shivemind fork. Internal references chain to:
@@ -204,6 +355,63 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           gh-fallback-token: ${{ secrets.GH_FALLBACK_TOKEN }}
 
+      # -------------------------------------------------------------------
+      # Move action output back into per-API directories and commit.
+      #
+      # The action may have already pushed its own commit to top-level
+      # paths.  We rebase, then collapse those paths into .postman/<api>/
+      # and postman/<api>/ so each service's state stays isolated.
+      # -------------------------------------------------------------------
+      - name: Persist per-API state
+        if: always()
+        env:
+          API_NAME: ${{ matrix.api.name }}
+        run: |
+          set -euo pipefail
+          API="$API_NAME"
+
+          # Absorb any auto-commit the action pushed.
+          git fetch origin "${{ github.ref_name }}"
+          git pull --rebase origin "${{ github.ref_name }}" || true
+
+          mkdir -p ".postman/${API}" "postman/${API}/collections" "postman/${API}/environments" "postman/${API}/globals"
+
+          if [ -f .postman/resources.yaml ]; then
+            mv -f .postman/resources.yaml ".postman/${API}/resources.yaml"
+          fi
+          if [ -f .postman/workflows.yaml ]; then
+            mv -f .postman/workflows.yaml ".postman/${API}/workflows.yaml"
+          fi
+          if [ -d postman/collections ]; then
+            cp -R postman/collections/. "postman/${API}/collections/"
+            rm -rf postman/collections
+          fi
+          if [ -d postman/environments ]; then
+            cp -R postman/environments/. "postman/${API}/environments/"
+            rm -rf postman/environments
+          fi
+          if [ -d postman/globals ]; then
+            cp -R postman/globals/. "postman/${API}/globals/"
+            rm -rf postman/globals
+          fi
+
+          git add -A ".postman/${API}" "postman/${API}" .postman postman || true
+
+          if git diff --cached --quiet; then
+            echo "No state changes to commit for $API"
+          else
+            git commit -m "chore(${API}): persist per-API state [skip ci]"
+            for i in 1 2 3; do
+              git pull --rebase origin "${{ github.ref_name }}" || true
+              if git push origin HEAD:"${{ github.ref_name }}"; then
+                echo "Pushed per-API state for $API"
+                break
+              fi
+              echo "Push attempt $i failed; retrying..."
+              sleep $((i * 3))
+            done
+          fi
+
       - name: Write onboarding summary
         if: always()
         run: |
@@ -218,4 +426,5 @@ jobs:
           | Collections | `${{ steps.onboard.outputs.collections-json }}` |
           | Environments | `${{ steps.onboard.outputs.environment-uids-json }}` |
           | Commit SHA | `${{ steps.onboard.outputs.commit-sha }}` |
+          | State path | `.postman/${{ matrix.api.name }}/resources.yaml` |
           EOF

@@ -1,0 +1,109 @@
+openapi: 3.0.3
+info:
+  title: Jeff Test Service
+  description: Minimal self-contained spec used to validate the Postman onboarding pipeline.
+  version: 1.0.0
+  contact:
+    name: Jeff Hall
+    email: jhall@life360.com
+servers:
+  - url: https://api.life360.com/v3
+    description: Production
+tags:
+  - name: Health
+    description: Liveness and connectivity checks.
+  - name: Echo
+    description: Round-trip request/response validation.
+paths:
+  /jeff-test/ping:
+    get:
+      operationId: getPing
+      summary: Health check
+      description: Returns a static pong response.
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is reachable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PingResponse'
+        '500':
+          description: Server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /jeff-test/echo:
+    post:
+      operationId: postEcho
+      summary: Echo a message back to the caller
+      description: Accepts a message and returns it unchanged.
+      tags:
+        - Echo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EchoRequest'
+      responses:
+        '200':
+          description: Echoed message.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EchoResponse'
+        '400':
+          description: Invalid request body.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  schemas:
+    PingResponse:
+      type: object
+      required:
+        - status
+        - timestamp
+      properties:
+        status:
+          type: string
+          enum: [ok]
+          example: ok
+        timestamp:
+          type: string
+          format: date-time
+          example: '2026-05-04T12:00:00Z'
+    EchoRequest:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 500
+          example: hello world
+    EchoResponse:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          example: hello world
+    ErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          example: INTERNAL_ERROR
+        message:
+          type: string
+          example: Something went wrong.

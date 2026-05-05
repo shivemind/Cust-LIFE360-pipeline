@@ -1,0 +1,41 @@
+openapi: 3.0.3
+info:
+  title: Preflight Checks
+  description: Minimal baseline spec for onboarding-pipeline testing. Not intended to match the real service.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8999
+    description: Local
+tags:
+  - name: Preflight
+    description: Synthetic infrastructure connectivity checks.
+paths:
+  /infra-check:
+    get:
+      operationId: getInfraCheck
+      summary: Run infrastructure connectivity checks
+      description: Executes a synthetic round-trip against the dependent infrastructure (DB, cache, downstream services) and returns a pass/fail summary plus a timestamp.
+      tags:
+        - Preflight
+      responses:
+        '200':
+          description: Check run completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InfraCheckResponse'
+components:
+  schemas:
+    InfraCheckResponse:
+      type: object
+      required:
+        - overall_status
+        - timestamp
+      properties:
+        overall_status:
+          type: string
+          enum: [pass, fail]
+        timestamp:
+          type: string
+          format: date-time
+          example: '2026-05-05T12:00:00Z'
